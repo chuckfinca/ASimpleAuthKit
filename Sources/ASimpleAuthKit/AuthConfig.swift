@@ -1,6 +1,5 @@
-// Sources/AuthKit/AuthConfig.swift
 import Foundation
-import FirebaseAuthUI // Required for FUIAuthProvider
+import FirebaseAuthUI
 
 public struct AuthConfig {
     let providers: [FUIAuthProvider] // e.g., [FUIEmailAuth(), FUIGoogleAuth(), FUIOAuth.appleAuthProvider()]
@@ -23,4 +22,3 @@ public struct AuthConfig {
         self.appleUserRetriever = appleUserRetriever
     }
 }
-//next steps are to extract-files and create a claud project. ask how the package looks (separateion of concerns, best practices, secure, modern principles, easy to drop into an app, etc.), any obvious bugs. then get the tests passing, then integrate into app.

@@ -73,11 +73,13 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                 self.presentingViewController?.dismiss(animated: true)
                 return
             }
+            
             self.currentSignInContinuation = nil // Clear immediately
 
             var dismissViewController = true // Assume dismissal unless linking/merge required
 
             if let localFirebaseUser = firebaseUser {
+                
                 // Now, interactions happen with localFirebaseUser within the MainActor context.
                 let user = User(firebaseUser: localFirebaseUser) // Create Sendable User instance.
                 print("FBAuth: Delegate success for \(user.uid)")
@@ -106,8 +108,11 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                         authKitError = .cancelled
                         self.clearTemporaryCredentials()
                     case Int(FUIAuthErrorCode.mergeConflict.rawValue): // Cast for safety/consistency
-                        guard let c = nsError.userInfo[FUIAuthCredentialKey] as? AuthCredential else { authKitError = .missingLinkingInfo
-                            break }
+                        guard let c = nsError.userInfo[FUIAuthCredentialKey] as? AuthCredential else {
+                            authKitError = .missingLinkingInfo
+                            break
+                        }
+                        
                         self.existingCredentialForMergeConflict = c
                         authKitError = .mergeConflictRequired
                         dismissViewController = false
@@ -134,17 +139,20 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                         self.clearTemporaryCredentials()
                     }
                 } else { authKitError = AuthError.makeFirebaseAuthError(error)
-                    self.clearTemporaryCredentials() } // Other domains
+                    self.clearTemporaryCredentials()
+            } // Other domains
 
                 continuation.resume(throwing: authKitError) // Resume with Sendable Error
                 if dismissViewController {
                     self.presentingViewController?.dismiss(animated: true)
                 } // Dismiss only if needed
 
-            } else { print("Auth Warning: Delegate unknown state.")
+            } else {
+                print("Auth Warning: Delegate unknown state.")
                 self.clearTemporaryCredentials()
                 continuation.resume(throwing: AuthError.unknown)
-                self.presentingViewController?.dismiss(animated: true) }
+                self.presentingViewController?.dismiss(animated: true)
+            }
         }
     }
 }

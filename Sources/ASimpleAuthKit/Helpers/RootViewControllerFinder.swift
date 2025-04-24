@@ -1,4 +1,3 @@
-// Sources/AuthKit/Helpers/RootViewControllerFinder.swift
 import UIKit
 
 public extension UIViewController {

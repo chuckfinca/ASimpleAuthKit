@@ -1,4 +1,3 @@
-// Sources/AuthKit/Protocols/SecureStorageProtocol.swift
 import Foundation
 
 internal protocol SecureStorageProtocol {

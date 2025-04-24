@@ -1,4 +1,3 @@
-// Sources/AuthKit/AuthState.swift
 import Foundation
 import FirebaseAuth
 
@@ -49,9 +48,9 @@ public enum AuthState: Equatable, Sendable {
     }
 
     var isPendingResolution: Bool {
-         switch self {
-         case .requiresAccountLinking, .requiresMergeConflictResolution: return true
-         default: return false
-         }
-     }
+        switch self {
+        case .requiresAccountLinking, .requiresMergeConflictResolution: return true
+        default: return false
+        }
+    }
 }

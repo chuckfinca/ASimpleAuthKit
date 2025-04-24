@@ -1,4 +1,3 @@
-// Sources/AuthKit/Internal/KeychainStorage.swift
 import Foundation
 import Security
 
@@ -9,9 +8,9 @@ internal class KeychainStorage: SecureStorageProtocol {
 
     func saveLastUserID(_ userID: String) throws {
         guard let data = userID.data(using: .utf8) else {
-             print("Keychain Error: Could not encode User ID")
-             // Consider throwing a specific error
-             throw AuthError.configurationError("Failed to encode User ID for Keychain.")
+            print("Keychain Error: Could not encode User ID")
+            // Consider throwing a specific error
+            throw AuthError.configurationError("Failed to encode User ID for Keychain.")
         }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -28,7 +27,7 @@ internal class KeychainStorage: SecureStorageProtocol {
             print("Keychain save error: \(status)")
             throw AuthError.keychainError(status)
         }
-         print("Keychain: Saved User ID \(userID)")
+        print("Keychain: Saved User ID \(userID)")
     }
 
     func getLastUserID() -> String? {
@@ -43,15 +42,14 @@ internal class KeychainStorage: SecureStorageProtocol {
         let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
 
         if status == errSecSuccess {
-            guard let data = dataTypeRef as? Data,
-                  let userID = String(data: data, encoding: .utf8) else {
+            guard let data = dataTypeRef as? Data, let userID = String(data: data, encoding: .utf8) else {
                 print("Keychain retrieve error: Failed to decode data.")
                 return nil
             }
             print("Keychain: Retrieved User ID \(userID)")
             return userID
         } else if status == errSecItemNotFound {
-             print("Keychain: No User ID found")
+            print("Keychain: No User ID found")
             return nil
         } else {
             print("Keychain retrieve error: \(status)")
@@ -71,6 +69,6 @@ internal class KeychainStorage: SecureStorageProtocol {
             print("Keychain clear error: \(status)")
             throw AuthError.keychainError(status)
         }
-         print("Keychain: Cleared User ID (Status: \(status))")
+        print("Keychain: Cleared User ID (Status: \(status))")
     }
 }
