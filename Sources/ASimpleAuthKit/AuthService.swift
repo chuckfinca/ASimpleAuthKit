@@ -23,7 +23,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     public init(config: AuthConfig) {
         self.config = config
-        let storage = KeychainStorage()
+        let storage = KeychainStorage(config.keychainAccessGroup)
         self.secureStorage = storage
         self.firebaseAuthenticator = FirebaseAuthenticator(config: config, secureStorage: storage)
         self.biometricAuthenticator = BiometricAuthenticator()

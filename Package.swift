@@ -15,7 +15,7 @@ let package = Package(
         // Add both Firebase and FirebaseUI dependencies with proper versioning
         .package(
             url: "https://github.com/firebase/firebase-ios-sdk.git",
-            from: "10.0.0" // Use a compatible version
+            from: "10.0.0"  
         ),
         .package(
             url: "https://github.com/firebase/FirebaseUI-iOS.git",
