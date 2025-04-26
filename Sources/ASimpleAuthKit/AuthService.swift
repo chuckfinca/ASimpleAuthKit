@@ -5,6 +5,7 @@ import UIKit
 
 @MainActor
 public class AuthService: ObservableObject, AuthServiceProtocol {
+
     @Published public private(set) var state: AuthState = .signedOut
     @Published public private(set) var lastError: AuthError? = nil
 
@@ -12,36 +13,62 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public var statePublisher: Published<AuthState>.Publisher { $state }
     public var lastErrorPublisher: Published<AuthError?>.Publisher { $lastError }
 
+    // Dependencies (now protocols where possible)
     private let config: AuthConfig
-    private let firebaseAuthenticator: FirebaseAuthenticator
-    private let biometricAuthenticator: BiometricAuthenticator
+    private let firebaseAuthenticator: FirebaseAuthenticatorProtocol
+    private let biometricAuthenticator: BiometricAuthenticatorProtocol
     private let secureStorage: SecureStorageProtocol
 
+    // Internal State
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var cancellables = Set<AnyCancellable>()
     private var emailForLinking: String? // Stores email during linking flow
 
-    public init(config: AuthConfig) {
+    // Designated Initializer (Internal - for DI and testing)
+    internal init(
+        config: AuthConfig,
+        secureStorage: SecureStorageProtocol,
+        firebaseAuthenticator: FirebaseAuthenticatorProtocol,
+        biometricAuthenticator: BiometricAuthenticatorProtocol
+    ) {
         self.config = config
-        let storage = KeychainStorage(config.keychainAccessGroup)
-        self.secureStorage = storage
-        self.firebaseAuthenticator = FirebaseAuthenticator(config: config, secureStorage: storage)
-        self.biometricAuthenticator = BiometricAuthenticator()
-        print("AuthService: Initializing.")
+        self.secureStorage = secureStorage
+        self.firebaseAuthenticator = firebaseAuthenticator
+        self.biometricAuthenticator = biometricAuthenticator
+        print("AuthService (Designated Init): Initializing with injected dependencies.")
 
-        // Setup listener
-        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] (_, user) in
+        // Setup listener using FirebaseAuth directly
+        // NOTE: This still relies on the global Auth.auth() singleton
+        self.authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] (_, user) in
             Task {
-                @MainActor [weak self] in // Dispatch listener callback to MainActor
+                @MainActor [weak self] in
                 self?.handleAuthStateChange(firebaseUser: user)
             }
         }
 
-        // Initial state check
-        Task { @MainActor [weak self] in // Ensure initial check runs on MainActor
+        // Initial state check using FirebaseAuth directly
+        Task { @MainActor [weak self] in
             self?.handleAuthStateChange(firebaseUser: Auth.auth().currentUser)
         }
-        print("AuthService: Init complete, listener added.")
+        print("AuthService (Designated Init): Init complete, listener added.")
+    }
+
+    // Convenience Initializer (Public - for production use)
+    public convenience init(config: AuthConfig) {
+        // Create concrete dependencies
+        let storage = KeychainStorage(accessGroup: config.keychainAccessGroup) // Uses convenience init of KeychainStorage
+        let bioAuth = BiometricAuthenticator()
+        // FirebaseAuthenticator needs config and storage
+        let fireAuth = FirebaseAuthenticator(config: config, secureStorage: storage)
+
+        // Call the designated initializer with concrete types
+        self.init(
+            config: config,
+            secureStorage: storage,
+            firebaseAuthenticator: fireAuth,
+            biometricAuthenticator: bioAuth
+        )
+        print("AuthService (Convenience Init): Created concrete dependencies.")
     }
 
     deinit {
@@ -144,7 +171,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             try await performBiometricAuthentication(reason: reason)
             print("AuthService: Bio successful.")
             if let u = Auth.auth().currentUser, u.uid == uid {
-                let user = User(firebaseUser: u)
+                let user = AuthUser(firebaseUser: u)
                 if !user.isAnonymous {
                     try? secureStorage.saveLastUserID(user.uid)
                 }
@@ -187,7 +214,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         lastError = nil
         do {
             let r = try await Auth.auth().signIn(with: cred)
-            let u = User(firebaseUser: r.user)
+            let u = AuthUser(firebaseUser: r.user)
             print("AuthService: Merge OK for \(u.uid).")
             firebaseAuthenticator.clearTemporaryCredentials()
             emailForLinking = nil
@@ -244,7 +271,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     }
 
-    private func completeSuccessfulSignIn(user: User) async {
+    private func completeSuccessfulSignIn(user: AuthUser) async {
         print("Completing sign-in for \(user.uid).")
         if let pCred = firebaseAuthenticator.pendingCredentialForLinking {
             print("Attempting link...")
@@ -337,7 +364,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         clearLocalUserData()
     }
 
-    private func performAccountLink(loggedInUser: User, pendingCredential: AuthCredential) async throws {
+    private func performAccountLink(loggedInUser: AuthUser, pendingCredential: AuthCredential) async throws {
         guard let fbUser = Auth.auth().currentUser, fbUser.uid == loggedInUser.uid else {
             print("Auth Error: Link user mismatch.")
             firebaseAuthenticator.clearTemporaryCredentials()
@@ -348,7 +375,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
         do {
             let r = try await fbUser.link(with: pendingCredential)
-            let u = User(firebaseUser: r.user)
+            let u = AuthUser(firebaseUser: r.user)
             print("Link OK!")
             state = .signedIn(u)
             firebaseAuthenticator.clearTemporaryCredentials()
@@ -373,7 +400,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     private func handleAuthStateChange(firebaseUser: FirebaseAuth.User?) {
         if let fbUser = firebaseUser {
-            let u = User(firebaseUser: fbUser)
+            let u = AuthUser(firebaseUser: fbUser)
             print("Listener: User PRESENT (\(u.uid)) State: \(state)")
             if state.isPendingResolution || state == .authenticating(nil) {
                 print(" Ignoring update.")
@@ -396,7 +423,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     }
 
-    private func checkBiometricsRequirement(for user: User) {
+    private func checkBiometricsRequirement(for user: AuthUser) {
         guard !user.isAnonymous else {
             print(" Skip bio for anon.")
             if state != .signedIn(user) {

@@ -8,14 +8,27 @@ internal class KeychainStorage: SecureStorageProtocol {
     private let account = "lastUserID"
     private let accessGroup: String?
 
-    init(accessGroup: String? = nil) {
+    internal init(service: String? = nil, accessGroup: String? = nil) {
         self.accessGroup = accessGroup
 
-        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
-            fatalError("ASimpleAuthKit Error: Could not retrieve bundle identifier. Ensure CFBundleIdentifier is set in the app's Info.plist.")
+        // Determine the service name
+        if let explicitService = service {
+            self.service = explicitService // Use explicit service if provided (for tests)
+        } else if let group = accessGroup {
+            // If sharing, use a constant service name scoped to the library/purpose
+            self.service = "io.appsimple.ASimpleAuthKit.SharedAuth" // Constant for shared items
+        } else {
+            // If not sharing, use the app's bundle ID for isolation
+            guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+                fatalError("ASimpleAuthKit Keychain Error: Could not retrieve bundle identifier. Ensure CFBundleIdentifier is set in the app's Info.plist.")
+            }
+            self.service = bundleIdentifier
         }
-        self.service = self.accessGroup != nil ? "io.appsimple.ASimpleAuthKit" : bundleIdentifier
-        print("KeychainStorage initialized with service: \(self.service)")
+        print("KeychainStorage initialized with service: '\(self.service)' \(self.accessGroup != nil ? "and access group: '\(self.accessGroup!)'" : "(no access group)")")
+    }
+
+    convenience init(accessGroup: String? = nil) {
+        self.init(service: nil, accessGroup: accessGroup) 
     }
 
     private func createBaseQuery() -> [String: Any] {
@@ -58,7 +71,7 @@ internal class KeychainStorage: SecureStorageProtocol {
         var query = createBaseQuery()
         query[kSecReturnData as String] = kCFBooleanTrue!
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        
+
         var dataTypeRef: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
 

@@ -1,7 +1,7 @@
 import Foundation
 import LocalAuthentication
 
-internal class BiometricAuthenticator {
+internal class BiometricAuthenticator: BiometricAuthenticatorProtocol {
 
     var isBiometricsAvailable: Bool {
         return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)

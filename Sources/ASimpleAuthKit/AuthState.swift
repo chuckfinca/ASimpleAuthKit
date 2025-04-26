@@ -2,7 +2,7 @@ import Foundation
 import FirebaseAuth
 
 // Simple User struct representing the authenticated user
-public struct User: Equatable, Sendable {
+public struct AuthUser: Equatable, Sendable {
     public let uid: String
     public let email: String?
     public let displayName: String?
@@ -16,13 +16,26 @@ public struct User: Equatable, Sendable {
         self.isAnonymous = firebaseUser.isAnonymous
         self.providerID = firebaseUser.providerData.first?.providerID
     }
+
+    // Internal initializer for Testing
+    internal init(uid: String, email: String?, displayName: String?, isAnonymous: Bool, providerID: String?) {
+        self.uid = uid
+        self.email = email
+        self.displayName = displayName
+        self.isAnonymous = isAnonymous
+        self.providerID = providerID
+    }
+
+    public static func == (lhs: AuthUser, rhs: AuthUser) -> Bool {
+        return lhs.uid == rhs.uid // Compare only UID for equality
+    }
 }
 
 public enum AuthState: Equatable, Sendable {
     case signedOut
     case authenticating(String?)
     case requiresBiometrics
-    case signedIn(User)
+    case signedIn(AuthUser)
     case requiresAccountLinking(email: String, existingProviders: [String])
     case requiresMergeConflictResolution
 

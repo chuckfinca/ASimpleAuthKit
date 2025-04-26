@@ -13,7 +13,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
     private let config: AuthConfig
     private var authUI: FUIAuth?
     private weak var presentingViewController: UIViewController?
-    private var currentSignInContinuation: CheckedContinuation<User, Error>?
+    private var currentSignInContinuation: CheckedContinuation<AuthUser, Error>?
     private(set) var pendingCredentialForLinking: AuthCredential? // Confined to MainActor
     private(set) var existingCredentialForMergeConflict: AuthCredential? // Confined to MainActor
     private let secureStorage: SecureStorageProtocol
@@ -43,7 +43,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
         print("FirebaseAuthenticator: Cleared temporary credentials.")
     }
 
-    func presentSignInUI(from viewController: UIViewController) async throws -> User {
+    func presentSignInUI(from viewController: UIViewController) async throws -> AuthUser {
         guard let authUI = self.authUI else {
             throw AuthError.configurationError("AuthUI not initialized.")
         }
@@ -81,7 +81,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
             if let localFirebaseUser = firebaseUser {
                 
                 // Now, interactions happen with localFirebaseUser within the MainActor context.
-                let user = User(firebaseUser: localFirebaseUser) // Create Sendable User instance.
+                let user = AuthUser(firebaseUser: localFirebaseUser) // Create Sendable User instance.
                 print("FBAuth: Delegate success for \(user.uid)")
 
                 // Perform actions needing the firebase user details
