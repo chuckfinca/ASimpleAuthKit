@@ -1,0 +1,11 @@
+{
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "ui": {
+      "enabled": true // Optional: Enables a web UI to view emulator status
+    },
+    "singleProjectMode": true // Usually good for package testing
+  }
+}

@@ -1,8 +1,66 @@
-.DS_Store
-/.build
-/Packages
-xcuserdata/
-DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
 .netrc
+
+# Xcode
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.xcuserstate
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Firebase
+.firebaserc
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+*-service-account.json
+*GoogleService-Info.plist
+
+# OS X
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# App signing
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Other common files to ignore
+*.log
+*.swp
+*.lock
+
+# Local tools
+
+.extractrc

@@ -2,6 +2,7 @@ import XCTest
 import Combine
 @testable import ASimpleAuthKit // Use @testable for internal access if needed (e.g., for User init)
 import FirebaseAuthUI
+import Firebase
 
 @MainActor // Run tests on MainActor since AuthService is MainActor-bound
 final class AuthServiceTests: XCTestCase {
@@ -19,8 +20,48 @@ final class AuthServiceTests: XCTestCase {
         password: "fakepassword"
     )
 
+    // Static flag to ensure configuration happens only once per test run
+    private var firebaseConfigured = false
+    private let authEmulatorHost = "localhost" // Or "127.0.0.1"
+    private let authEmulatorPort = 9099
+
     // MARK: Lifecycle (Async)
     override func setUp() async throws {
+
+        // --- Firebase Configuration & Emulator Setup ---
+        if !firebaseConfigured {
+            print("AuthServiceTests: Configuring Firebase and Auth Emulator for tests...")
+            
+            guard let fileURL = Bundle.module.url(forResource: "GoogleService-Info-Tests", withExtension: "plist") else {
+                // Keep the same error message for now, just change the lookup method
+                throw TestError.testSetupFailed("GoogleService-Info-Tests.plist not found in test bundle (Bundle.module).")
+            }
+            // And use the URL's path if needed by FirebaseOptions, or check if it accepts a URL directly
+            guard let fileopts = FirebaseOptions(contentsOfFile: fileURL.path) else { // Use fileURL.path
+                 throw TestError.testSetupFailed("Could not load FirebaseOptions from GoogleService-Info-Tests.plist.")
+            }
+            
+
+            // Configure only if no default app exists (safer)
+            if FirebaseApp.app() == nil {
+                FirebaseApp.configure(options: fileopts)
+                print("AuthServiceTests: FirebaseApp configured with test options.")
+            } else {
+                print("AuthServiceTests: FirebaseApp already configured.")
+            }
+
+
+            // 2. Point Auth to the Emulator
+            Auth.auth().useEmulator(withHost: authEmulatorHost, port: authEmulatorPort)
+            print("AuthServiceTests: FirebaseAuth configured to use emulator at \(authEmulatorHost):\(authEmulatorPort)")
+
+            firebaseConfigured = true
+            print("AuthServiceTests: One-time Firebase test setup complete.")
+        }
+        // --- End Firebase Configuration ---
+
+
+        // --- Your existing mock setup ---
         cancellables = []
         dummyVC = DummyViewController()
         config = AuthConfig(providers: []) // Default config
@@ -28,19 +69,17 @@ final class AuthServiceTests: XCTestCase {
         mockBiometricAuthenticator = MockBiometricAuthenticator()
         mockFirebaseAuthenticator = MockFirebaseAuthenticator(config: config, secureStorage: mockSecureStorage)
 
-        // Use the internal designated initializer to inject mocks
+        // AuthService initialization MUST happen *after* FirebaseApp.configure()
+        // and preferably after useEmulator()
         sut = AuthService(
             config: config,
             secureStorage: mockSecureStorage,
             firebaseAuthenticator: mockFirebaseAuthenticator,
             biometricAuthenticator: mockBiometricAuthenticator
         )
-
-        // Allow brief moment for initial state check/listener setup if necessary
-        // This is often not needed if tests don't rely on immediate listener side effects
-        // try await Task.sleep(nanoseconds: 10_000_000)
+        print("AuthServiceTests: SUT initialized.")
+        // --- End mock setup ---
     }
-
     override func tearDown() async throws {
         sut = nil
         mockFirebaseAuthenticator = nil
@@ -330,11 +369,11 @@ final class AuthServiceTests: XCTestCase {
         var cancellable: AnyCancellable?
         cancellable = sut.statePublisher
             .sink { state in
-                if state == .signedOut {
-                    expectation.fulfill()
-                    cancellable?.cancel() // Optional: Cancel subscription once fulfilled
-                }
+            if state == .signedOut {
+                expectation.fulfill()
+                cancellable?.cancel() // Optional: Cancel subscription once fulfilled
             }
+        }
 
         // Act
         sut.signOut() // Trigger the sign out process
@@ -547,7 +586,7 @@ final class AuthServiceTests: XCTestCase {
             guard case .signedIn = sut.state else { throw TestError.unexpectedState("Could not arrange signedIn state, was \(sut.state)") }
             return
         }
-        
+
         mockFirebaseAuthenticator.reset()
 
         // Act

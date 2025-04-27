@@ -19,7 +19,7 @@ class KeychainStorageTests: XCTestCase {
     let testServiceSuffix = ".tests"
     var testServiceNameIsolated: String! // For non-shared tests
     var testServiceNameShared: String! // For shared tests (constant)
-    var testAccessGroup: String? = "com.yourcompany.ASimpleAuthKitTests.SharedGroup" // Example - MUST MATCH ENTITLEMENTS
+    var testAccessGroup: String? = "io.appsimple.ASimpleAuthKitTests.SharedGroup" // Example - MUST MATCH ENTITLEMENTS
 
     override func setUp() async throws {
         // Call super first (generally safer before async operations)

@@ -37,6 +37,10 @@ let package = Package(
                 "ASimpleAuthKit",
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseAuthUI", package: "FirebaseUI-iOS"),
+            ],
+            resources: [
+                // Tell SPM to copy the plist into the test bundle
+                .copy("GoogleService-Info-Tests.plist")            
             ]
         ),
     ]
