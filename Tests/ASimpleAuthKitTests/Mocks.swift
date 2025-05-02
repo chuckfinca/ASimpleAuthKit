@@ -15,7 +15,7 @@ class MockSecureStorage: SecureStorageProtocol {
     var getLastUserIDCallCount = 0
     var clearUserIDCallCount = 0
     var lastSavedUserID: String?
-    var lastClearedService: String?
+    var lastClearedService: String? // Variable name seems off? Should relate to cleared item? Let's ignore for now.
     var saveError: Error?
     var clearError: Error?
 
@@ -30,9 +30,11 @@ class MockSecureStorage: SecureStorageProtocol {
         if let explicitService = service {
              self.service = explicitService
         } else if let group = accessGroup {
+             // Use the constant for shared items defined in KeychainStorage
              self.service = "io.appsimple.ASimpleAuthKit.SharedAuth" // Match constant
         } else {
-             // Use test bundle ID or a fallback
+             // Use test bundle ID or a fallback - Important for isolated tests
+             // Make sure this matches the expectation in the test
              self.service = Bundle(for: MockSecureStorage.self).bundleIdentifier ?? "com.example.DefaultTestBundleID"
         }
         self.accessGroup = accessGroup
@@ -41,11 +43,16 @@ class MockSecureStorage: SecureStorageProtocol {
 
 
     func saveLastUserID(_ userID: String) throws {
-        if let error = saveError { throw error }
+        // Throw before doing anything else if error is set
+        if let error = saveError {
+            print("MockSecureStorage: Throwing simulated save error: \(error)")
+            throw error
+        }
         saveUserIDCallCount += 1
         lastSavedUserID = userID
-        storage["\(service)-\(account)"] = userID // Simulate namespacing by service/account
-        print("MockSecureStorage: Saved '\(userID)' for service '\(service)'")
+        let key = "\(service)-\(account)" // Use service and account for key
+        storage[key] = userID // Simulate namespacing by service/account
+        print("MockSecureStorage: Saved '\(userID)' for key '\(key)'")
     }
 
     func getLastUserID() -> String? {
@@ -57,9 +64,13 @@ class MockSecureStorage: SecureStorageProtocol {
     }
 
     func clearLastUserID() throws {
-        if let error = clearError { throw error }
+        // Throw before doing anything else if error is set
+        if let error = clearError {
+            print("MockSecureStorage: Throwing simulated clear error: \(error)")
+            throw error
+        }
         clearUserIDCallCount += 1
-        lastClearedService = service
+        // lastClearedService = service // This variable might be misnamed or unnecessary. Let's ignore.
         let key = "\(service)-\(account)"
         let oldValue = storage.removeValue(forKey: key)
         print("MockSecureStorage: Cleared for key '\(key)', removed: \(oldValue ?? "nil")")
@@ -71,7 +82,7 @@ class MockSecureStorage: SecureStorageProtocol {
         getLastUserIDCallCount = 0
         clearUserIDCallCount = 0
         lastSavedUserID = nil
-        lastClearedService = nil
+        // lastClearedService = nil // Reset this too if kept
         saveError = nil
         clearError = nil
         print("MockSecureStorage: Reset.")
