@@ -91,7 +91,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                 }
                 // Use the Sendable 'user' where appropriate
                 if !user.isAnonymous {
-                    try? self.secureStorage.saveLastUserID(user.uid)
+                    try? await self.secureStorage.saveLastUserID(user.uid)
                 }
 
                 // Resume with the Sendable user struct

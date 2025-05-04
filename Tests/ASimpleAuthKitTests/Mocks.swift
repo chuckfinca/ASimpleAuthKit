@@ -1,3 +1,5 @@
+// /Users/charlesfeinn/Desktop/extracted_files/Mocks.swift
+// --- START OF MODIFIED FILE ---
 import Foundation
 import Combine
 import UIKit
@@ -39,22 +41,23 @@ class MockSecureStorage: SecureStorageProtocol {
         print("MockSecureStorage initialized for service: '\(self.service)' \(self.accessGroup != nil ? "group: '\(self.accessGroup!)'" : "(no group)")")
     }
 
-
-    func saveLastUserID(_ userID: String) throws {
-        // Throw before doing anything else if error is set
+    // <<< MODIFIED: Method is now async throws >>>
+    func saveLastUserID(_ userID: String) async throws {
+        // Internal logic remains synchronous, just add async keyword for conformance
         if let error = saveError {
             print("MockSecureStorage: Throwing simulated save error: \(error)")
             throw error
         }
-        // Increment count *before* potential failure point (more realistic)
         saveUserIDCallCount += 1
         lastSavedUserID = userID
-        let key = "\(service)-\(account)" // Use service and account for key
-        storage[key] = userID // Simulate namespacing by service/account
+        let key = "\(service)-\(account)"
+        storage[key] = userID
         print("MockSecureStorage: Saved '\(userID)' for key '\(key)'")
     }
 
-    func getLastUserID() -> String? {
+    // <<< MODIFIED: Method is now async -> String? >>>
+    func getLastUserID() async -> String? {
+        // Internal logic remains synchronous
         getLastUserIDCallCount += 1
         let key = "\(service)-\(account)"
         let uid = storage[key]
@@ -62,13 +65,13 @@ class MockSecureStorage: SecureStorageProtocol {
         return uid
     }
 
-    func clearLastUserID() throws {
-        // Throw before doing anything else if error is set
+    // <<< MODIFIED: Method is now async throws >>>
+    func clearLastUserID() async throws {
+        // Internal logic remains synchronous
         if let error = clearError {
             print("MockSecureStorage: Throwing simulated clear error: \(error)")
             throw error
         }
-        // Increment count *before* potential failure point
         clearUserIDCallCount += 1
         let key = "\(service)-\(account)"
         let oldValue = storage.removeValue(forKey: key)
@@ -87,7 +90,7 @@ class MockSecureStorage: SecureStorageProtocol {
     }
 }
 
-// --- Mock Biometric Authenticator ---
+// --- Mock Biometric Authenticator (No changes needed for this phase) ---
 @MainActor
 class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     var mockIsAvailable = true
@@ -130,13 +133,14 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     }
 }
 
-// --- Mock Firebase Authenticator ---
+// --- Mock Firebase Authenticator (No changes needed for this phase) ---
 @MainActor
 class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     // --- Configuration & Dependencies ---
     let config: AuthConfig
-    let secureStorage: SecureStorageProtocol // Still useful for config, though side effects removed
+    // <<< MODIFIED: Dependency type updated >>>
+    let secureStorage: SecureStorageProtocol
 
     // --- Mock Control Properties ---
     /// If set, `presentSignInUI` returns this result immediately.
@@ -166,6 +170,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     }
 
     // --- Initialization ---
+    // <<< MODIFIED: Dependency type updated >>>
     init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
         self.config = config
         self.secureStorage = secureStorage
@@ -292,7 +297,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     // This logic is now handled by AuthService itself.
 }
 
-// MARK: - Test Helpers
+// MARK: - Test Helpers (No changes needed)
 
 // Helper to create a dummy user using the internal initializer
 func createDummyUser(uid: String = "dummyUID", email: String? = "dummy@test.com", displayName: String? = "Dummy", isAnonymous: Bool = false, providerID: String? = "password") -> AuthUser {
@@ -316,3 +321,4 @@ enum TestError: Error, LocalizedError {
         }
     }
 }
+// --- END OF MODIFIED FILE ---

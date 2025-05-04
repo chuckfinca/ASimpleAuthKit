@@ -1,10 +1,5 @@
-//
-//  KeychainStorageTests.swift
-//  ASimpleAuthKit
-//
-//  Created by Charles Feinn on 4/26/25.
-//
-
+// /Users/charlesfeinn/Desktop/extracted_files/KeychainStorageTests.swift
+// --- START OF FULL FILE ---
 import XCTest
 @testable import ASimpleAuthKit // Use @testable to access internal types like MockSecureStorage
 
@@ -16,37 +11,32 @@ class KeychainStorageTests: XCTestCase {
     var sut: MockSecureStorage!
 
     // Test-specific service names for verifying mock's internal logic if needed
-    let testServiceIsolated = "com.example.TestAppBundleID.tests" // Example isolated service
+    let testServiceIsolated = Bundle(for: KeychainStorageTests.self).bundleIdentifier ?? "com.example.DefaultTestBundleID.tests" // More robust way to get test bundle ID
     let testServiceShared = "io.appsimple.ASimpleAuthKit.SharedAuth" // Matches mock/real shared constant
     let testAccessGroup = "io.appsimple.ASimpleAuthKitTests.SharedGroup" // Example group identifier
 
-    override func setUp() async throws {
-        // No need to call super.setUpWithError() as we're not using complex XCTestCase features here
-        // No need to interact with the real keychain anymore
-
-        // Initialize the mock *before* each test.
-        // Using the default initializer for most tests, specific ones might override.
-        sut = MockSecureStorage()
+    override func setUp() async throws { // Keep setUp synchronous
+        sut = MockSecureStorage(service: nil, accessGroup: nil) // Use default init (isolated)
         sut.reset() // Ensure the mock is clean before every test
     }
 
-    override func tearDown() async throws {
-        // Release the mock after each test
+    override func tearDown() async throws { // Keep tearDown synchronous
         sut = nil
-        // No real keychain cleanup needed
     }
 
     // MARK: - Protocol Compliance Tests (Using Mock)
 
-    func testSaveLastUserID_Success() throws {
+    func testSaveLastUserID_Success() async throws {
         // Arrange
-        // sut is already initialized in setUp with default config (likely isolated)
         let userID = "testUser123"
         XCTAssertEqual(sut.saveUserIDCallCount, 0, "Precondition: Save count should be 0")
-        XCTAssertNil(sut.storage["\(sut.service)-lastUserID"], "Precondition: Storage should be empty for this service")
+        // <<< FIXED: Await before assert >>>
+        let preSaveID = await sut.getLastUserID()
+        XCTAssertNil(preSaveID, "Precondition: Storage should be empty for this key")
+        sut.getLastUserIDCallCount = 0 // Reset after precondition check
 
         // Act
-        try sut.saveLastUserID(userID)
+        try await sut.saveLastUserID(userID)
 
         // Assert
         XCTAssertEqual(sut.saveUserIDCallCount, 1, "Save should be called once")
@@ -54,67 +44,73 @@ class KeychainStorageTests: XCTestCase {
         XCTAssertEqual(sut.storage["\(sut.service)-lastUserID"], userID, "Mock's internal storage should contain the ID for the correct key")
     }
 
-    func testGetLastUserID_WhenNoUserSaved_ReturnsNil() {
+    func testGetLastUserID_WhenNoUserSaved_ReturnsNil() async {
         // Arrange
-        // sut is initialized fresh in setUp, storage is empty
         XCTAssertEqual(sut.getLastUserIDCallCount, 0, "Precondition: Get count should be 0")
         XCTAssertTrue(sut.storage.isEmpty, "Precondition: Mock storage should be empty")
 
         // Act
-        let retrievedID = sut.getLastUserID()
+        let retrievedID = await sut.getLastUserID() // await is correct here
 
         // Assert
-        XCTAssertNil(retrievedID, "Should return nil when no user ID is saved")
+        XCTAssertNil(retrievedID, "Should return nil when no user ID is saved") // XCTAssertNil handles the result directly
         XCTAssertEqual(sut.getLastUserIDCallCount, 1, "Get should be called once")
     }
 
-    func testGetLastUserID_WhenUserSaved_ReturnsUserID() throws {
+    func testGetLastUserID_WhenUserSaved_ReturnsUserID() async throws {
         // Arrange
         let userID = "existingUser456"
-        // Directly manipulate mock storage for arrangement if needed, or use save
-        try sut.saveLastUserID(userID)
-        sut.getLastUserIDCallCount = 0 // Reset call count after arrangement
+        try await sut.saveLastUserID(userID)
+        sut.getLastUserIDCallCount = 0
 
         // Act
-        let retrievedID = sut.getLastUserID()
+        let retrievedID = await sut.getLastUserID() // await is correct here
 
         // Assert
-        XCTAssertEqual(retrievedID, userID, "Should return the previously saved user ID")
+        XCTAssertEqual(retrievedID, userID, "Should return the previously saved user ID") // XCTAssertEqual handles the result directly
         XCTAssertEqual(sut.getLastUserIDCallCount, 1, "Get should be called once")
     }
 
-    func testClearLastUserID_RemovesSavedUser() throws {
+    func testClearLastUserID_RemovesSavedUser() async throws {
         // Arrange
         let userID = "userToClear"
-        try sut.saveLastUserID(userID) // Save a user first
-        XCTAssertNotNil(sut.getLastUserID(), "Precondition: User ID should be present before clearing")
+        try await sut.saveLastUserID(userID)
+        // <<< FIXED: Await before assert >>>
+        let preClearID = await sut.getLastUserID()
+        XCTAssertNotNil(preClearID, "Precondition: User ID should be present before clearing")
         XCTAssertEqual(sut.clearUserIDCallCount, 0, "Precondition: Clear count should be 0")
-        sut.getLastUserIDCallCount = 0 // Reset get count after precondition check
+        sut.getLastUserIDCallCount = 0
 
         // Act
-        try sut.clearLastUserID()
+        try await sut.clearLastUserID()
 
         // Assert
-        XCTAssertNil(sut.getLastUserID(), "User ID should be nil after clearing")
+        // <<< FIXED: Await before assert >>>
+        let postClearID = await sut.getLastUserID()
+        XCTAssertNil(postClearID, "User ID should be nil after clearing")
         XCTAssertEqual(sut.clearUserIDCallCount, 1, "Clear should be called once")
         XCTAssertEqual(sut.getLastUserIDCallCount, 1, "Get should have been called (in assertion)")
         XCTAssertNil(sut.storage["\(sut.service)-lastUserID"], "Mock's internal storage should be empty for this key")
     }
 
-    func testSaveLastUserID_OverwritesExistingUser() throws {
+    func testSaveLastUserID_OverwritesExistingUser() async throws {
         // Arrange
         let initialUserID = "initialUser"
         let newUserID = "newUser"
-        try sut.saveLastUserID(initialUserID)
-        XCTAssertEqual(sut.getLastUserID(), initialUserID, "Precondition: Initial user should be saved")
-        sut.saveUserIDCallCount = 0 // Reset save count after arrangement
-        sut.getLastUserIDCallCount = 0 // Reset get count
+        try await sut.saveLastUserID(initialUserID)
+        // <<< FIXED: Await before assert >>>
+        let preOverwriteID = await sut.getLastUserID()
+        XCTAssertEqual(preOverwriteID, initialUserID, "Precondition: Initial user should be saved")
+        sut.saveUserIDCallCount = 0
+        sut.getLastUserIDCallCount = 0
 
         // Act
-        try sut.saveLastUserID(newUserID) // Save again with a new ID
+        try await sut.saveLastUserID(newUserID)
 
         // Assert
-        XCTAssertEqual(sut.getLastUserID(), newUserID, "The new user ID should overwrite the old one")
+        // <<< FIXED: Await before assert >>>
+        let postOverwriteID = await sut.getLastUserID()
+        XCTAssertEqual(postOverwriteID, newUserID, "The new user ID should overwrite the old one")
         XCTAssertEqual(sut.saveUserIDCallCount, 1, "Save should be called once (for the overwrite)")
         XCTAssertEqual(sut.lastSavedUserID, newUserID, "Mock should record the latest saved ID")
         XCTAssertEqual(sut.storage["\(sut.service)-lastUserID"], newUserID, "Mock storage should hold the new user ID")
@@ -122,104 +118,106 @@ class KeychainStorageTests: XCTestCase {
 
     // MARK: - Mock Behavior Tests (Simulating Shared vs. Isolated)
 
-    // Test that the mock uses the correct service name when initialized without an access group
-    func testMockInitialization_Isolated() {
-        // Arrange
-        sut = MockSecureStorage(service: nil, accessGroup: nil) // Explicitly use nil group
+    func testMockInitialization_Isolated() { // Sync test
+        sut = MockSecureStorage(service: nil, accessGroup: nil)
         let expectedService = Bundle(for: MockSecureStorage.self).bundleIdentifier ?? "com.example.DefaultTestBundleID"
-
-        // Assert
         XCTAssertEqual(sut.service, expectedService, "Mock service should default to bundle ID when no group is provided")
         XCTAssertNil(sut.accessGroup, "Mock access group should be nil")
     }
 
-    // Test that the mock uses the correct service name when initialized *with* an access group
-    func testMockInitialization_Shared() {
-        // Arrange
-        sut = MockSecureStorage(service: nil, accessGroup: testAccessGroup) // Provide an access group
-
-        // Assert
+    func testMockInitialization_Shared() { // Sync test
+        sut = MockSecureStorage(service: nil, accessGroup: testAccessGroup)
         XCTAssertEqual(sut.service, testServiceShared, "Mock service should use the shared constant when a group is provided")
         XCTAssertEqual(sut.accessGroup, testAccessGroup, "Mock access group should match the provided group")
     }
 
-     // Test that two mock instances initialized differently maintain separate storage
-    func testMockStorageIsolation_SharedDoesNotAffectIsolated() throws {
-         // Arrange: Create two separate mock instances with different configurations
-         let isolatedSUT = MockSecureStorage(service: nil, accessGroup: nil) // Defaults to isolated service
-         let sharedSUT = MockSecureStorage(service: nil, accessGroup: testAccessGroup) // Uses shared service
+    func testMockStorageIsolation_SharedDoesNotAffectIsolated() async throws {
+        // Arrange
+        let isolatedSUT = MockSecureStorage(service: nil, accessGroup: nil)
+        let sharedSUT = MockSecureStorage(service: nil, accessGroup: testAccessGroup)
+        let isolatedUser = "isolatedOnly"
+        let sharedUser = "sharedOnly"
+        XCTAssertNotEqual(isolatedSUT.service, sharedSUT.service)
 
-         let isolatedUser = "isolatedOnly"
-         let sharedUser = "sharedOnly"
+        // Act
+        try await isolatedSUT.saveLastUserID(isolatedUser)
+        try await sharedSUT.saveLastUserID(sharedUser)
 
-         // Precondition checks on service names (optional but good)
-         XCTAssertNotEqual(isolatedSUT.service, sharedSUT.service, "The two mocks should have different service names based on initialization")
+        // Assert
+        // <<< FIXED: Await before assert >>>
+        let isolatedUserActual1 = await isolatedSUT.getLastUserID()
+        XCTAssertEqual(isolatedUserActual1, isolatedUser, "Isolated mock should hold the isolated user")
+        XCTAssertNil(isolatedSUT.storage["\(sharedSUT.service)-lastUserID"], "Isolated mock storage should not contain the shared key")
 
-         // Act: Save different users to each mock instance
-         try isolatedSUT.saveLastUserID(isolatedUser)
-         try sharedSUT.saveLastUserID(sharedUser)
+        // <<< FIXED: Await before assert >>>
+        let sharedUserActual1 = await sharedSUT.getLastUserID()
+        XCTAssertEqual(sharedUserActual1, sharedUser, "Shared mock should hold the shared user")
+        XCTAssertNil(sharedSUT.storage["\(isolatedSUT.service)-lastUserID"], "Shared mock storage should not contain the isolated key")
 
-         // Assert: Check that each mock contains only its own user
-         XCTAssertEqual(isolatedSUT.getLastUserID(), isolatedUser, "Isolated mock should hold the isolated user")
-         XCTAssertNil(isolatedSUT.storage["\(sharedSUT.service)-lastUserID"], "Isolated mock storage should not contain the shared key")
+        // Act
+        try await sharedSUT.clearLastUserID()
 
-         XCTAssertEqual(sharedSUT.getLastUserID(), sharedUser, "Shared mock should hold the shared user")
-         XCTAssertNil(sharedSUT.storage["\(isolatedSUT.service)-lastUserID"], "Shared mock storage should not contain the isolated key")
+        // Assert
+        // <<< FIXED: Await before assert >>>
+        let isolatedUserActual2 = await isolatedSUT.getLastUserID()
+        XCTAssertEqual(isolatedUserActual2, isolatedUser, "Isolated mock should remain unaffected after clearing shared mock")
 
-         // Act: Clear the shared mock
-         try sharedSUT.clearLastUserID()
-
-         // Assert: Verify isolated mock is unaffected and shared mock is clear
-         XCTAssertEqual(isolatedSUT.getLastUserID(), isolatedUser, "Isolated mock should remain unaffected after clearing shared mock")
-         XCTAssertNil(sharedSUT.getLastUserID(), "Shared mock should be clear")
-         XCTAssertNil(sharedSUT.storage["\(sharedSUT.service)-lastUserID"], "Shared mock storage should be empty for its key")
+        // <<< FIXED: Await before assert >>>
+        let sharedUserActual2 = await sharedSUT.getLastUserID()
+        XCTAssertNil(sharedUserActual2, "Shared mock should be clear")
+        XCTAssertNil(sharedSUT.storage["\(sharedSUT.service)-lastUserID"], "Shared mock storage should be empty for its key")
     }
 
     // MARK: - Error Handling Tests (Using Mock's Error Simulation)
 
-    func testSaveLastUserID_ThrowsError() {
+    func testSaveLastUserID_ThrowsError() async {
         // Arrange
-        let expectedError = AuthError.keychainError(errSecInteractionNotAllowed) // Example error
-        sut.saveError = expectedError // Configure the mock to throw this error on save
+        let expectedError = AuthError.keychainError(errSecInteractionNotAllowed)
+        sut.saveError = expectedError
         let userID = "userThatWillFail"
 
-        // Act & Assert
+        // Act & Assert using do-catch
         do {
-            try sut.saveLastUserID(userID)
-            XCTFail("Save should have thrown an error, but it did not.")
-        } catch let error as AuthError {
-            XCTAssertEqual(error, expectedError, "The caught error should match the expected AuthError")
+            try await sut.saveLastUserID(userID) // Attempt the throwing async call
+            XCTFail("Expected saveLastUserID to throw an error, but it did not.") // Fail if it *doesn't* throw
         } catch {
-            XCTFail("Caught an unexpected error type: \(error)")
+            // Assert on the caught error
+            guard let authError = error as? AuthError else {
+                XCTFail("Caught error is not the expected AuthError type: \(error)")
+                return
+            }
+            XCTAssertEqual(authError, expectedError, "The caught error should match the expected AuthError")
         }
 
-        // Verify mock state after attempted save
-        XCTAssertEqual(sut.saveUserIDCallCount, 0, "Save count should remain 0 as the function threw early") // Mock should increment count *before* throwing if simulating Keychain behavior accurately. Let's adjust mock if needed.
-        // Let's check the mock implementation. If it throws *before* incrementing, this is correct. If it increments *then* throws, count should be 1.
-        // --> The current MockSecureStorage throws *before* incrementing. This assertion is correct for the *current* mock.
-         XCTAssertNil(sut.lastSavedUserID)
-         XCTAssertNil(sut.storage["\(sut.service)-lastUserID"])
+        // Verify mock state (remains the same)
+        XCTAssertEqual(sut.saveUserIDCallCount, 0)
+        let storageValue = await sut.getLastUserID()
+        XCTAssertNil(storageValue)
     }
 
-    func testClearLastUserID_ThrowsError() {
+    func testClearLastUserID_ThrowsError() async throws { // Keep throws for arrange step
         // Arrange
-        let expectedError = AuthError.keychainError(errSecAuthFailed) // Example error
-        sut.clearError = expectedError // Configure mock to throw on clear
-        try? sut.saveLastUserID("someUser") // Ensure there's something to clear
+        let expectedError = AuthError.keychainError(errSecAuthFailed)
+        sut.clearError = expectedError
+        try await sut.saveLastUserID("someUser") // Arrange still needs await
 
-        // Act & Assert
+        // Act & Assert using do-catch
         do {
-            try sut.clearLastUserID()
-            XCTFail("Clear should have thrown an error, but it did not.")
-        } catch let error as AuthError {
-            XCTAssertEqual(error, expectedError, "The caught error should match the expected AuthError")
+            try await sut.clearLastUserID() // Attempt the throwing async call
+            XCTFail("Expected clearLastUserID to throw an error, but it did not.") // Fail if it *doesn't* throw
         } catch {
-            XCTFail("Caught an unexpected error type: \(error)")
+            // Assert on the caught error
+            guard let authError = error as? AuthError else {
+                XCTFail("Caught error is not the expected AuthError type: \(error)")
+                return
+            }
+            XCTAssertEqual(authError, expectedError, "The caught error should match the expected AuthError")
         }
 
-        // Verify state
-        XCTAssertEqual(sut.clearUserIDCallCount, 0) // Assuming mock throws before incrementing
-        XCTAssertNotNil(sut.getLastUserID(), "User ID should still exist if clear failed") // Check if clear actually removed it despite error
-        // --> The current MockSecureStorage throws *before* incrementing or removing. This assertion is correct.
+        // Verify state (remains the same)
+        XCTAssertEqual(sut.clearUserIDCallCount, 0)
+        let userIDAfterFailedClear = await sut.getLastUserID()
+        XCTAssertNotNil(userIDAfterFailedClear, "User ID should still exist if clear failed")
     }
 }
+// --- END OF FULL FILE ---
