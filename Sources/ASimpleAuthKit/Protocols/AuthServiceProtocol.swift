@@ -14,6 +14,11 @@ public protocol AuthServiceProtocol: ObservableObject {
     func authenticateWithBiometrics(reason: String) async
     func proceedWithMergeConflictResolution() async
     func cancelPendingAction()
+    
+    /// **Must be called** when the AuthService instance is no longer needed
+    /// to ensure proper cleanup of internal listeners (e.g., Firebase Auth state).
+    /// In SwiftUI, call this from `.onDisappear` of the view owning the `@StateObject`.
+    func invalidate()
 }
 
 public extension AuthServiceProtocol { // Default implementations only

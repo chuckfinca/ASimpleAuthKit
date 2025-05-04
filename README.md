@@ -249,6 +249,29 @@ struct ContentView: View {
 }
 ```
 
+## Lifecycle Management
+
+It is crucial to manage the lifecycle of the `AuthService` instance, especially regarding its internal Firebase listener.
+
+**Important:** When the `AuthService` instance is no longer needed (e.g., when the view using it disappears), you **must** call the `invalidate()` method. This ensures the Firebase authentication state listener is properly removed, preventing potential memory leaks or unexpected behavior.
+
+**Example in SwiftUI:**
+
+```swift
+struct YourAuthenticatedView: View {
+    @StateObject var authService: AuthService // Assuming initialized appropriately
+
+    var body: some View {
+        VStack {
+            // ... your view content based on authService.state
+        }
+        .onDisappear {
+            print("YourAuthenticatedView disappearing, invalidating AuthService.")
+            authService.invalidate() // <-- Call invalidate here!
+        }
+    }
+}
+
 ## Configuration Options (`AuthConfig`)
 
 You configure `ASimpleAuthKit` by passing an `AuthConfig` struct when creating the `AuthService`.
