@@ -1,5 +1,3 @@
-// Tests/ASimpleAuthKitTests/Mocks.swift
-
 import Foundation
 import Combine
 import UIKit
@@ -15,7 +13,6 @@ class MockSecureStorage: SecureStorageProtocol {
     var getLastUserIDCallCount = 0
     var clearUserIDCallCount = 0
     var lastSavedUserID: String?
-    var lastClearedService: String? // Variable name seems off? Should relate to cleared item? Let's ignore for now.
     var saveError: Error?
     var clearError: Error?
 
@@ -28,13 +25,14 @@ class MockSecureStorage: SecureStorageProtocol {
     init(service: String? = nil, accessGroup: String? = nil) {
         // Simulate the logic from KeychainStorage's internal init
         if let explicitService = service {
-             self.service = explicitService
+            self.service = explicitService
         } else if let group = accessGroup {
-             // Use the constant for shared items defined in KeychainStorage
-             self.service = "io.appsimple.ASimpleAuthKit.SharedAuth" // Match constant
+            // Use the constant for shared items defined in KeychainStorage
+            self.service = "io.appsimple.ASimpleAuthKit.SharedAuth" // Match constant
         } else {
-             // Use test bundle ID or a fallback - Important for isolated tests
-             // Make sure this matches the expectation in the test
+            // Use test bundle ID or a fallback - Important for isolated tests
+            // Make sure this matches the expectation in the test
+            // Using Bundle(for:) ensures it gets the test bundle ID when run from tests
              self.service = Bundle(for: MockSecureStorage.self).bundleIdentifier ?? "com.example.DefaultTestBundleID"
         }
         self.accessGroup = accessGroup
@@ -48,6 +46,7 @@ class MockSecureStorage: SecureStorageProtocol {
             print("MockSecureStorage: Throwing simulated save error: \(error)")
             throw error
         }
+        // Increment count *before* potential failure point (more realistic)
         saveUserIDCallCount += 1
         lastSavedUserID = userID
         let key = "\(service)-\(account)" // Use service and account for key
@@ -69,8 +68,8 @@ class MockSecureStorage: SecureStorageProtocol {
             print("MockSecureStorage: Throwing simulated clear error: \(error)")
             throw error
         }
+        // Increment count *before* potential failure point
         clearUserIDCallCount += 1
-        // lastClearedService = service // This variable might be misnamed or unnecessary. Let's ignore.
         let key = "\(service)-\(account)"
         let oldValue = storage.removeValue(forKey: key)
         print("MockSecureStorage: Cleared for key '\(key)', removed: \(oldValue ?? "nil")")
@@ -82,7 +81,6 @@ class MockSecureStorage: SecureStorageProtocol {
         getLastUserIDCallCount = 0
         clearUserIDCallCount = 0
         lastSavedUserID = nil
-        // lastClearedService = nil // Reset this too if kept
         saveError = nil
         clearError = nil
         print("MockSecureStorage: Reset.")
@@ -99,7 +97,10 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     var authenticateCallCount = 0
     var lastAuthReason: String?
 
-    var isBiometricsAvailable: Bool { mockIsAvailable }
+    var isBiometricsAvailable: Bool {
+        print("MockBiometricAuthenticator: isBiometricsAvailable checked, returning \(mockIsAvailable)")
+        return mockIsAvailable
+    }
     var biometryTypeString: String { mockBiometryType }
 
     func authenticate(reason: String, completion: @escaping (Result<Void, AuthError>) -> Void) {
@@ -108,12 +109,14 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
         print("MockBiometricAuthenticator: Authenticate called (\(authenticateCallCount)) with reason: \(reason)")
         guard let provider = authResultProvider else {
             print("MockBiometricAuthenticator: No result provider set, completing with unknown error.")
-             DispatchQueue.main.async { completion(.failure(.unknown)) }
-             return
+            DispatchQueue.main.async { completion(.failure(.unknown)) }
+            return
         }
+        let result = provider()
+        print("MockBiometricAuthenticator: Provided result: \(result)")
         // Simulate async callback
         DispatchQueue.main.async {
-             completion(provider())
+            completion(result)
         }
     }
 
@@ -133,7 +136,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     // --- Configuration & Dependencies ---
     let config: AuthConfig
-    let secureStorage: SecureStorageProtocol // Needed to simulate side effects
+    let secureStorage: SecureStorageProtocol // Still useful for config, though side effects removed
 
     // --- Mock Control Properties ---
     /// If set, `presentSignInUI` returns this result immediately.
@@ -141,6 +144,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     /// If `signInResultProvider` is nil, `presentSignInUI` stores the continuation here.
     var signInContinuation: CheckedContinuation<AuthUser, Error>?
 
+    // Stored credentials are now just for inspection by tests, not cleared by mock
     var mockPendingCredentialForLinking: AuthCredential?
     var mockExistingCredentialForMergeConflict: AuthCredential?
 
@@ -152,6 +156,14 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     // --- Protocol Conformance ---
     var pendingCredentialForLinking: AuthCredential? { mockPendingCredentialForLinking }
     var existingCredentialForMergeConflict: AuthCredential? { mockExistingCredentialForMergeConflict }
+
+    // Helper to create the placeholder when needed
+    private func createPlaceholderCredential() -> AuthCredential {
+        return EmailAuthProvider.credential(
+            withEmail: "test@example.com",
+            password: "fakepassword"
+        )
+    }
 
     // --- Initialization ---
     init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
@@ -167,31 +179,48 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
         // Option 1: Immediate result via provider
         if let provider = signInResultProvider {
-             print("MockFirebaseAuthenticator: Using signInResultProvider.")
-             let result = provider()
-             print("MockFirebaseAuthenticator: Provided result: \(result)")
-             switch result {
-             case .success(let user):
-                  // Simulate storage side-effect (ignore errors in mock)
-                  if !user.isAnonymous { try? await MainActor.run { try secureStorage.saveLastUserID(user.uid) } }
-                  return user
-             case .failure(let error):
-                  // Simulate credential clearing side-effect
-                  simulateCredentialClearingOnError(error)
-                  throw error
+            print("MockFirebaseAuthenticator: Using signInResultProvider.")
+            let result = provider()
+            print("MockFirebaseAuthenticator: Provided result: \(result)")
+
+            // Simulate storing credentials *before* throwing for specific errors
+            // This simulates what the actual FirebaseUI delegate method does
+            if case .failure(let error) = result, let authError = error as? AuthError {
+                 switch authError {
+                 case .accountLinkingRequired:
+                     print("MockFirebaseAuthenticator: Simulating storage of pending credential.")
+                     // Set the mock credential so AuthService can retrieve it
+                     self.mockPendingCredentialForLinking = createPlaceholderCredential()
+                 case .mergeConflictRequired:
+                     print("MockFirebaseAuthenticator: Simulating storage of existing credential.")
+                      // Set the mock credential so AuthService can retrieve it
+                     self.mockExistingCredentialForMergeConflict = createPlaceholderCredential()
+                 default:
+                     break // No credential action for other errors
+                 }
              }
+
+            // Now return result or throw error
+            switch result {
+            case .success(let user):
+                return user
+            case .failure(let error):
+                 // NOTE: We no longer call simulateCredentialClearingOnError here.
+                 // The mock's job is just to return the error. AuthService decides whether to clear.
+                throw error
+            }
         }
         // Option 2: Hang using continuation
-        else {
-             print("MockFirebaseAuthenticator: No result provider, using continuation.")
-             // Cancel any previous hanging continuation before storing a new one
-             if let existingContinuation = signInContinuation {
-                  print("MockFirebaseAuthenticator: Warning - Overwriting existing continuation.")
-                  existingContinuation.resume(throwing: AuthError.cancelled) // Cancel previous one
-             }
-             return try await withCheckedThrowingContinuation { continuation in
-                 self.signInContinuation = continuation // Store the new continuation
-             }
+            else {
+            print("MockFirebaseAuthenticator: No result provider, using continuation.")
+            // Cancel any previous hanging continuation before storing a new one
+            if let existingContinuation = signInContinuation {
+                print("MockFirebaseAuthenticator: Warning - Overwriting existing continuation.")
+                existingContinuation.resume(throwing: AuthError.cancelled) // Cancel previous one
+            }
+            return try await withCheckedThrowingContinuation { continuation in
+                self.signInContinuation = continuation // Store the new continuation
+            }
         }
     }
 
@@ -199,30 +228,46 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     func completeSignIn(result: Result<AuthUser, Error>) {
         guard let continuation = signInContinuation else {
             print("MockFirebaseAuthenticator: No continuation to complete.")
-            // Consider XCTFail if called unexpectedly? Or just log.
             return
         }
         print("MockFirebaseAuthenticator: Completing continuation with result: \(result)")
         self.signInContinuation = nil // Clear before resuming
 
-        // Perform side effects *before* resuming
-        Task { @MainActor in // Ensure storage access is on main actor
+        // Perform side effects *before* resuming (like setting credentials)
+        Task { @MainActor in
+            if case .failure(let error) = result, let authError = error as? AuthError {
+                 switch authError {
+                 case .accountLinkingRequired:
+                     print("MockFirebaseAuthenticator: Simulating storage of pending credential (continuation).")
+                     self.mockPendingCredentialForLinking = createPlaceholderCredential()
+                 case .mergeConflictRequired:
+                     print("MockFirebaseAuthenticator: Simulating storage of existing credential (continuation).")
+                     self.mockExistingCredentialForMergeConflict = createPlaceholderCredential()
+                 default:
+                     break
+                 }
+             }
+
+            // Resume the continuation
             switch result {
             case .success(let user):
-                if !user.isAnonymous { try? secureStorage.saveLastUserID(user.uid) }
                 continuation.resume(returning: user)
             case .failure(let error):
-                simulateCredentialClearingOnError(error)
+                // NOTE: No call to simulateCredentialClearingOnError here either.
                 continuation.resume(throwing: error)
             }
         }
     }
 
+    // <<< REVISED >>>
     func clearTemporaryCredentials() {
+        // This method ONLY tracks the call count.
+        // It does NOT modify the mock's credential properties.
         clearTemporaryCredentialsCallCount += 1
-        mockPendingCredentialForLinking = nil
-        mockExistingCredentialForMergeConflict = nil
-        print("MockFirebaseAuthenticator: clearTemporaryCredentials called (\(clearTemporaryCredentialsCallCount)).")
+        print("MockFirebaseAuthenticator: clearTemporaryCredentials called (\(clearTemporaryCredentialsCallCount)). Mock credentials remain for inspection.")
+        // Intentionally removed:
+        // mockPendingCredentialForLinking = nil
+        // mockExistingCredentialForMergeConflict = nil
     }
 
     /// Resets mock state, including cancelling any hanging continuation.
@@ -233,6 +278,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
             cont.resume(throwing: AuthError.cancelled) // Ensure hanging tasks can complete
             signInContinuation = nil
         }
+        // Clear credentials only on explicit reset
         mockPendingCredentialForLinking = nil
         mockExistingCredentialForMergeConflict = nil
         presentSignInUICallCount = 0
@@ -242,23 +288,8 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     }
 
     // --- Private Helpers ---
-    /// Encapsulates the logic for when credentials should be cleared based on error type.
-    private func simulateCredentialClearingOnError(_ error: Error) {
-        if let authError = error as? AuthError {
-            switch authError {
-            case .cancelled, .firebaseUIError, .firebaseAuthError, .missingLinkingInfo, .unknown, .configurationError, .keychainError, .accountLinkingError, .mergeConflictError:
-                print("MockFirebaseAuthenticator: Simulating credential clear for error: \(authError)")
-                clearTemporaryCredentials()
-            case .accountLinkingRequired, .mergeConflictRequired, .biometricsFailed, .biometricsNotAvailable:
-                print("MockFirebaseAuthenticator: Not clearing credentials for specific error: \(authError)")
-                break // Don't clear for these specific cases
-            }
-        } else {
-            // Clear for generic errors too
-            print("MockFirebaseAuthenticator: Simulating credential clear for generic error: \(error)")
-            clearTemporaryCredentials()
-        }
-    }
+    // <<< REMOVED simulateCredentialClearingOnError >>>
+    // This logic is now handled by AuthService itself.
 }
 
 // MARK: - Test Helpers
@@ -269,18 +300,18 @@ func createDummyUser(uid: String = "dummyUID", email: String? = "dummy@test.com"
 }
 
 // Dummy VC for presenting calls
-class DummyViewController: UIViewController {}
+class DummyViewController: UIViewController { }
 
 // Define TestError used in tests
 enum TestError: Error, LocalizedError {
     case unexpectedState(String)
-    case timeout
+    case timeout(String) // Add description to timeout
     case testSetupFailed(String) // More specific setup error
 
     var errorDescription: String? {
         switch self {
         case .unexpectedState(let msg): return "TestError: Unexpected State - \(msg)"
-        case .timeout: return "TestError: Asynchronous operation timed out."
+        case .timeout(let msg): return "TestError: Asynchronous operation timed out waiting for: \(msg)."
         case .testSetupFailed(let msg): return "TestError: Test setup failed - \(msg)"
         }
     }

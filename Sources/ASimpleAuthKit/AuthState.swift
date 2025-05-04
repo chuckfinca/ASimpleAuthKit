@@ -66,4 +66,11 @@ public enum AuthState: Equatable, Sendable {
         default: return false
         }
     }
+
+    var isAuthenticating: Bool {
+        switch self {
+        case .authenticating: return true
+        default: return false
+        }
+    }
 }
