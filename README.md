@@ -1,8 +1,8 @@
 # ASimpleAuthKit
 
-[![Swift Version](https://img.shields.io/badge/Swift-5.9+-orange.svg)]() <!-- Update Swift version badge as needed -->
+[![Swift Version](https://img.shields.io/badge/Swift-5.8+-orange.svg)]()
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%2016.0+-blue.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE) <!-- Choose and add your license -->
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 <!-- Add other badges like build status, version -->
 
 A simple Swift package to streamline Firebase Authentication integration (using FirebaseUI) in SwiftUI applications, handling common flows like sign-in, sign-out, state management, account linking, merge conflicts, biometrics, and secure keychain storage.
