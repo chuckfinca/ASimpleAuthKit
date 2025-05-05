@@ -1,4 +1,3 @@
-// Sources/AuthKit/Protocols/FirebaseAuthenticatorProtocol.swift
 import Foundation
 import FirebaseAuth
 import UIKit

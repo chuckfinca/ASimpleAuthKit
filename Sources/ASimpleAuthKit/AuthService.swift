@@ -1,5 +1,3 @@
-// /Users/charlesfeinn/Desktop/extracted_files/AuthService.swift
-// --- START OF FULL FILE ---
 import Foundation
 import Combine
 @preconcurrency import FirebaseAuth // Keep for non-Sendable handling
@@ -15,7 +13,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public var statePublisher: Published<AuthState>.Publisher { $state }
     public var lastErrorPublisher: Published<AuthError?>.Publisher { $lastError }
 
-    // Dependencies (now protocols where possible)
+    // Dependencies
     private let config: AuthConfig
     private let firebaseAuthenticator: FirebaseAuthenticatorProtocol
     private let biometricAuthenticator: BiometricAuthenticatorProtocol
@@ -127,13 +125,14 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
         do {
             let user = try await firebaseAuthenticator.presentSignInUI(from: viewController)
-            // <<< MODIFIED: Call refactored completion handler >>>
             await handleSuccessfulSignIn(user: user)
+            
         } catch let e as AuthError {
             await handleSignInAuthError(e)
             if state.isPendingResolution || e == .cancelled || state == .requiresBiometrics {
                 dismiss = false
             }
+            
         } catch {
             handleSignInGenericError(error)
         }
@@ -231,15 +230,15 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         setState(.authenticating("Merging accounts..."))
         lastError = nil
         do {
-            let r = try await Auth.auth().signIn(with: cred)
-            let u = AuthUser(firebaseUser: r.user)
-            print("AuthService: Merge successful for user \(u.uid). Proceeding to check biometrics.")
+            let authDataResult = try await Auth.auth().signIn(with: cred)
+            let user = AuthUser(firebaseUser: authDataResult.user)
+            print("AuthService: Merge successful for user \(user.uid). Proceeding to check biometrics.")
             firebaseAuthenticator.clearTemporaryCredentials()
             emailForLinking = nil
             lastError = nil
 
             // Check biometrics before setting final state
-            await checkBiometricsRequirement(for: u) // This will call setState internally
+            await checkBiometricsRequirement(for: user) // This will call setState internally
 
             print("AuthService: Merge conflict resolved. Final state: \(state)")
 
@@ -305,7 +304,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     }
 
-    // --- Sign In Completion Handling (Refactored) ---
+    // MARK: - Sign In Completion Handling
 
     /// Top-level handler called after firebaseAuthenticator.presentSignInUI succeeds.
     private func handleSuccessfulSignIn(user: AuthUser) async {
@@ -424,8 +423,8 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         setState(.signedOut)
     }
 
-    // --- PERFORM ACCOUNT LINK ---
-    // (Remains largely the same, but calls checkBiometricsRequirement on success)
+    // MARK: Account Linking
+
     private func performAccountLink(loggedInUser: AuthUser, pendingCredential: AuthCredential) async throws {
         print("Attempting to link account for user \(loggedInUser.uid).")
         guard let fbUser = Auth.auth().currentUser, fbUser.uid == loggedInUser.uid else {
@@ -472,8 +471,8 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             throw specificError
         }
     }
-     // --- END PERFORM ACCOUNT LINK ---
-
+    
+    // MARK: State
 
     private func handleAuthStateChange(firebaseUser: FirebaseAuth.User?) async {
         guard !isTestMode else { return }
@@ -522,7 +521,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
          }
     }
 
-    // --- Biometrics Check (Refactored) ---
+    // --- Biometrics Check ---
 
     /// Determines the appropriate AuthState based on the user, stored ID, and biometrics availability.
     /// Also handles saving the user ID to secure storage if needed.
@@ -577,7 +576,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
          // Update the overall service state
          setState(determinedState)
      }
-     // --- END Biometrics Check ---
 
     // MARK: - Test Helpers
     #if DEBUG
@@ -592,4 +590,3 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     #endif
 }
-// --- END OF FULL FILE ---

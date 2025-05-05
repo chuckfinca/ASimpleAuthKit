@@ -1,18 +1,3 @@
-// /Users/charlesfeinn/Desktop/extracted_files/AuthServiceTests.swift
-// --- START OF FULL FILE ---
-// MARK: Changes Applied:
-// 1. Added Reminder comment in setUp() about running the emulator.
-// 2. Fixed `clearTemporaryCredentialsCallCount` assertions across multiple tests.
-// 3. Fixed `saveUserIDCallCount` assertion reset order in `testSignIn_FromSignedOut_Success_updatesStateToRequiresBiometrics`.
-// 4. Corrected `saveUserIDCallCount` assertion in `testSignIn_FromSignedOut_Success_updatesStateToSignedInAndSavesUserID` (now expects 1).
-// 5. Made tests using `forceRequiresBiometricsState` more robust against Keychain/Network errors during setup (using `try?` or explicit error handling/skip).
-// 6. Adjusted assertions in `testProceedWithMergeConflict_Success_updatesStateAndClearsCreds` to reflect the expected failure path when the internal Firebase call fails.
-// 7. Renamed and rewrote `testSignIn_AccountLinkingRequired_FetchFails...` to `testSignIn_AccountLinkingRequired_FetchSucceeds...` to test the *observed* behavior.
-// 8. Adjusted assertion for `lastError` in `testSignIn_AccountLinkingRequired_updatesStateAndSetsError`.
-// 9. Removed all `Task.yield` or `Task.sleep` calls.
-// 10. Phase 2: Added await for secureStorage calls.
-// 11. Phase 2 Fix: Moved await calls *outside* XCTAssert autoclosures.
-
 import XCTest
 import Combine
 @testable import ASimpleAuthKit // Use @testable for internal access if needed
@@ -76,7 +61,7 @@ final class AuthServiceTests: XCTestCase {
         }
 
         print("AuthServiceTests: Attempting pre-test sign out from emulator...")
-        let signOutTask = Task { try? await Auth.auth().signOut() }
+        let signOutTask = Task { try? Auth.auth().signOut() }
         _ = await Task { await signOutTask.result }.result
         print("AuthServiceTests: Pre-test sign out attempt complete.")
 
@@ -99,7 +84,7 @@ final class AuthServiceTests: XCTestCase {
 
     override func tearDown() async throws {
         print("AuthServiceTests: Attempting post-test sign out...")
-        let signOutTask = Task { try? await Auth.auth().signOut() }
+        let signOutTask = Task { try? Auth.auth().signOut() }
          _ = await Task { await signOutTask.result }.result
         print("AuthServiceTests: Post-test sign out attempt complete.")
 
@@ -159,7 +144,7 @@ final class AuthServiceTests: XCTestCase {
         sut.forceStateForTesting(.requiresBiometrics)
         print("ForceBiometrics Helper: Forced SUT state to .requiresBiometrics.")
         guard sut.state == .requiresBiometrics else {
-             try? await Auth.auth().signOut()
+             try? Auth.auth().signOut()
              throw TestError.unexpectedState("Failed to force requiresBiometrics state, current state is \(sut.state)")
         }
         print("ForceBiometrics Helper: Successfully forced requiresBiometrics state.")
@@ -196,7 +181,7 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertNil(sut.lastError)
         XCTAssertEqual(mockFirebaseAuthenticator.presentSignInUICallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1, "Save should be called once")
-        // <<< FIXED: Await before assert >>>
+        
         let actualUserID = await mockSecureStorage.getLastUserID()
         XCTAssertEqual(actualUserID, "user123")
         XCTAssertEqual(mockFirebaseAuthenticator.clearTemporaryCredentialsCallCount, 1, "Expected 1 clear (from initial reset)")
@@ -219,7 +204,7 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertNil(sut.lastError)
         XCTAssertEqual(mockFirebaseAuthenticator.presentSignInUICallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 0)
-        // <<< FIXED: Await before assert >>>
+        
         let actualUserID = await mockSecureStorage.getLastUserID()
         XCTAssertNil(actualUserID)
         XCTAssertEqual(mockFirebaseAuthenticator.clearTemporaryCredentialsCallCount, 1, "Expected 1 clear (from initial reset)")
@@ -232,7 +217,7 @@ final class AuthServiceTests: XCTestCase {
         mockFirebaseAuthenticator.reset()
         mockSecureStorage.reset()
         mockBiometricAuthenticator.reset()
-        // <<< MODIFIED: Added await >>>
+        
         try await mockSecureStorage.saveLastUserID(user.uid)
         mockBiometricAuthenticator.mockIsAvailable = true
         mockFirebaseAuthenticator.signInResultProvider = { .success(user) }
@@ -247,7 +232,7 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertNil(sut.lastError)
         XCTAssertEqual(mockFirebaseAuthenticator.presentSignInUICallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 0, "Save should NOT happen again by SUT")
-        // <<< FIXED: Await before assert >>>
+        
         let actualUserID = await mockSecureStorage.getLastUserID()
         XCTAssertEqual(actualUserID, user.uid)
         XCTAssertEqual(mockFirebaseAuthenticator.clearTemporaryCredentialsCallCount, 1, "Expected 1 clear (from initial reset)")
@@ -269,7 +254,7 @@ final class AuthServiceTests: XCTestCase {
         mockBiometricAuthenticator.reset()
         mockFirebaseAuthenticator.signInResultProvider = { .success(actualUser) }
         mockBiometricAuthenticator.mockIsAvailable = true
-        // <<< MODIFIED: Added await >>>
+        
         try await mockSecureStorage.saveLastUserID(actualUser.uid)
 
         // Act
@@ -347,7 +332,6 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertNotNil(mockFirebaseAuthenticator.pendingCredentialForLinking)
         XCTAssertEqual(mockFirebaseAuthenticator.clearTemporaryCredentialsCallCount, 1, "Expected 1 clear (initial reset only)")
     }
-
 
     func testSignIn_MergeConflictRequired_updatesStateAndSetsError() async throws {
         // Arrange
@@ -696,4 +680,3 @@ extension TestError {
         return false
     }
 }
-// --- END OF FULL FILE ---

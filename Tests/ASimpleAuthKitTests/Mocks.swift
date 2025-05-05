@@ -1,13 +1,10 @@
-// /Users/charlesfeinn/Desktop/extracted_files/Mocks.swift
-// --- START OF MODIFIED FILE ---
 import Foundation
 import Combine
 import UIKit
 import XCTest // Needed for XCTFail in publisher helper
 import FirebaseAuth // For AuthCredential
-@testable import ASimpleAuthKit // Import your library
+@testable import ASimpleAuthKit
 
-// --- Mock Secure Storage ---
 @MainActor // Ensure accessed on main actor if AuthService expects it
 class MockSecureStorage: SecureStorageProtocol {
     var storage: [String: String] = [:]
@@ -28,7 +25,7 @@ class MockSecureStorage: SecureStorageProtocol {
         // Simulate the logic from KeychainStorage's internal init
         if let explicitService = service {
             self.service = explicitService
-        } else if let group = accessGroup {
+        } else if accessGroup != nil {
             // Use the constant for shared items defined in KeychainStorage
             self.service = "io.appsimple.ASimpleAuthKit.SharedAuth" // Match constant
         } else {
@@ -41,7 +38,6 @@ class MockSecureStorage: SecureStorageProtocol {
         print("MockSecureStorage initialized for service: '\(self.service)' \(self.accessGroup != nil ? "group: '\(self.accessGroup!)'" : "(no group)")")
     }
 
-    // <<< MODIFIED: Method is now async throws >>>
     func saveLastUserID(_ userID: String) async throws {
         // Internal logic remains synchronous, just add async keyword for conformance
         if let error = saveError {
@@ -55,7 +51,6 @@ class MockSecureStorage: SecureStorageProtocol {
         print("MockSecureStorage: Saved '\(userID)' for key '\(key)'")
     }
 
-    // <<< MODIFIED: Method is now async -> String? >>>
     func getLastUserID() async -> String? {
         // Internal logic remains synchronous
         getLastUserIDCallCount += 1
@@ -65,7 +60,6 @@ class MockSecureStorage: SecureStorageProtocol {
         return uid
     }
 
-    // <<< MODIFIED: Method is now async throws >>>
     func clearLastUserID() async throws {
         // Internal logic remains synchronous
         if let error = clearError {
@@ -90,7 +84,6 @@ class MockSecureStorage: SecureStorageProtocol {
     }
 }
 
-// --- Mock Biometric Authenticator (No changes needed for this phase) ---
 @MainActor
 class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     var mockIsAvailable = true
@@ -133,13 +126,12 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     }
 }
 
-// --- Mock Firebase Authenticator (No changes needed for this phase) ---
+// --- Mock Firebase Authenticator ---
 @MainActor
 class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     // --- Configuration & Dependencies ---
     let config: AuthConfig
-    // <<< MODIFIED: Dependency type updated >>>
     let secureStorage: SecureStorageProtocol
 
     // --- Mock Control Properties ---
@@ -170,7 +162,6 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     }
 
     // --- Initialization ---
-    // <<< MODIFIED: Dependency type updated >>>
     init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
         self.config = config
         self.secureStorage = secureStorage
@@ -264,15 +255,11 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         }
     }
 
-    // <<< REVISED >>>
     func clearTemporaryCredentials() {
         // This method ONLY tracks the call count.
         // It does NOT modify the mock's credential properties.
         clearTemporaryCredentialsCallCount += 1
         print("MockFirebaseAuthenticator: clearTemporaryCredentials called (\(clearTemporaryCredentialsCallCount)). Mock credentials remain for inspection.")
-        // Intentionally removed:
-        // mockPendingCredentialForLinking = nil
-        // mockExistingCredentialForMergeConflict = nil
     }
 
     /// Resets mock state, including cancelling any hanging continuation.
@@ -291,10 +278,6 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         lastPresentingVC = nil
         print("MockFirebaseAuthenticator: Reset.")
     }
-
-    // --- Private Helpers ---
-    // <<< REMOVED simulateCredentialClearingOnError >>>
-    // This logic is now handled by AuthService itself.
 }
 
 // MARK: - Test Helpers (No changes needed)
@@ -321,4 +304,3 @@ enum TestError: Error, LocalizedError {
         }
     }
 }
-// --- END OF MODIFIED FILE ---

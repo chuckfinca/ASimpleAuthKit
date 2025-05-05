@@ -1,5 +1,3 @@
-// /Users/charlesfeinn/Desktop/extracted_files/KeychainStorageTests.swift
-// --- START OF FULL FILE ---
 import XCTest
 @testable import ASimpleAuthKit // Use @testable to access internal types like MockSecureStorage
 
@@ -30,7 +28,7 @@ class KeychainStorageTests: XCTestCase {
         // Arrange
         let userID = "testUser123"
         XCTAssertEqual(sut.saveUserIDCallCount, 0, "Precondition: Save count should be 0")
-        // <<< FIXED: Await before assert >>>
+        
         let preSaveID = await sut.getLastUserID()
         XCTAssertNil(preSaveID, "Precondition: Storage should be empty for this key")
         sut.getLastUserIDCallCount = 0 // Reset after precondition check
@@ -75,7 +73,7 @@ class KeychainStorageTests: XCTestCase {
         // Arrange
         let userID = "userToClear"
         try await sut.saveLastUserID(userID)
-        // <<< FIXED: Await before assert >>>
+        
         let preClearID = await sut.getLastUserID()
         XCTAssertNotNil(preClearID, "Precondition: User ID should be present before clearing")
         XCTAssertEqual(sut.clearUserIDCallCount, 0, "Precondition: Clear count should be 0")
@@ -85,7 +83,6 @@ class KeychainStorageTests: XCTestCase {
         try await sut.clearLastUserID()
 
         // Assert
-        // <<< FIXED: Await before assert >>>
         let postClearID = await sut.getLastUserID()
         XCTAssertNil(postClearID, "User ID should be nil after clearing")
         XCTAssertEqual(sut.clearUserIDCallCount, 1, "Clear should be called once")
@@ -108,7 +105,6 @@ class KeychainStorageTests: XCTestCase {
         try await sut.saveLastUserID(newUserID)
 
         // Assert
-        // <<< FIXED: Await before assert >>>
         let postOverwriteID = await sut.getLastUserID()
         XCTAssertEqual(postOverwriteID, newUserID, "The new user ID should overwrite the old one")
         XCTAssertEqual(sut.saveUserIDCallCount, 1, "Save should be called once (for the overwrite)")
@@ -144,12 +140,10 @@ class KeychainStorageTests: XCTestCase {
         try await sharedSUT.saveLastUserID(sharedUser)
 
         // Assert
-        // <<< FIXED: Await before assert >>>
         let isolatedUserActual1 = await isolatedSUT.getLastUserID()
         XCTAssertEqual(isolatedUserActual1, isolatedUser, "Isolated mock should hold the isolated user")
         XCTAssertNil(isolatedSUT.storage["\(sharedSUT.service)-lastUserID"], "Isolated mock storage should not contain the shared key")
 
-        // <<< FIXED: Await before assert >>>
         let sharedUserActual1 = await sharedSUT.getLastUserID()
         XCTAssertEqual(sharedUserActual1, sharedUser, "Shared mock should hold the shared user")
         XCTAssertNil(sharedSUT.storage["\(isolatedSUT.service)-lastUserID"], "Shared mock storage should not contain the isolated key")
@@ -158,11 +152,9 @@ class KeychainStorageTests: XCTestCase {
         try await sharedSUT.clearLastUserID()
 
         // Assert
-        // <<< FIXED: Await before assert >>>
         let isolatedUserActual2 = await isolatedSUT.getLastUserID()
         XCTAssertEqual(isolatedUserActual2, isolatedUser, "Isolated mock should remain unaffected after clearing shared mock")
 
-        // <<< FIXED: Await before assert >>>
         let sharedUserActual2 = await sharedSUT.getLastUserID()
         XCTAssertNil(sharedUserActual2, "Shared mock should be clear")
         XCTAssertNil(sharedSUT.storage["\(sharedSUT.service)-lastUserID"], "Shared mock storage should be empty for its key")
@@ -220,4 +212,3 @@ class KeychainStorageTests: XCTestCase {
         XCTAssertNotNil(userIDAfterFailedClear, "User ID should still exist if clear failed")
     }
 }
-// --- END OF FULL FILE ---

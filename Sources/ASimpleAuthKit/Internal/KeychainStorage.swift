@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-// Assumed to be called only from @MainActor context in AuthService,
+// Called only from @MainActor context in AuthService,
 // but performs keychain operations on a background thread via Task.detached.
 internal class KeychainStorage: SecureStorageProtocol {
 
@@ -9,14 +9,13 @@ internal class KeychainStorage: SecureStorageProtocol {
     private let account = "lastUserID"
     private let accessGroup: String?
 
-    // Initializer remains synchronous
     internal init(service: String? = nil, accessGroup: String? = nil) {
         self.accessGroup = accessGroup
 
         // Determine the service name (same logic)
         if let explicitService = service {
             self.service = explicitService
-        } else if let group = accessGroup {
+        } else if accessGroup != nil {
             self.service = "io.appsimple.ASimpleAuthKit.SharedAuth"
         } else {
             guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
@@ -31,7 +30,6 @@ internal class KeychainStorage: SecureStorageProtocol {
         self.init(service: nil, accessGroup: accessGroup)
     }
 
-    // createBaseQuery remains synchronous helper
     private func createBaseQuery() -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -44,9 +42,9 @@ internal class KeychainStorage: SecureStorageProtocol {
         return query
     }
 
-    // <<< MODIFIED: Method is now async throws >>>
     func saveLastUserID(_ userID: String) async throws {
         print("Keychain: Initiating async save for User ID \(userID)...")
+        
         // Perform actual keychain operation in detached task to avoid blocking caller
         try await Task.detached { [service, account, accessGroup] in
             // Recreate base query inside task if needed, or capture necessary properties
@@ -85,11 +83,11 @@ internal class KeychainStorage: SecureStorageProtocol {
             print("Keychain Task: Successfully saved User ID \(userID) to service '\(service)' \(accessGroup != nil ? "in group \(accessGroup!)" : "")")
 
         }.value // Propagates error thrown from the detached task
+        
         // This print happens back on the calling actor's thread (MainActor)
         print("Keychain: Async save completed for User ID \(userID)")
     }
 
-    // <<< MODIFIED: Method is now async -> String? >>>
     func getLastUserID() async -> String? {
         print("Keychain: Initiating async retrieval of User ID...")
         // Perform actual keychain operation in detached task
@@ -115,9 +113,11 @@ internal class KeychainStorage: SecureStorageProtocol {
                 }
                  print("Keychain Task: Retrieved User ID \(retrievedUserID) from service '\(service)' \(accessGroup != nil ? "in group \(accessGroup!)" : "")")
                 return retrievedUserID
+                
             } else if status == errSecItemNotFound {
                 print("Keychain Task: No User ID found (Status: \(status))")
                 return nil // Not found is expected
+                
             } else {
                 print("Keychain Task Error: Retrieval failed (Status: \(status))")
                 return nil // Other error occurred
@@ -128,7 +128,6 @@ internal class KeychainStorage: SecureStorageProtocol {
         return userID
     }
 
-    // <<< MODIFIED: Method is now async throws >>>
     func clearLastUserID() async throws {
          print("Keychain: Initiating async clear of User ID...")
         // Perform actual keychain operation in detached task
@@ -149,6 +148,7 @@ internal class KeychainStorage: SecureStorageProtocol {
             }
              print("Keychain Task: Cleared User ID from service '\(service)' \(accessGroup != nil ? "in group \(accessGroup!)" : "") (Status: \(status))")
         }.value // Propagates error
+        
         // This print happens back on the calling actor's thread (MainActor)
         print("Keychain: Async clear completed.")
     }

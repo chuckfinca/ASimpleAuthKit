@@ -4,9 +4,8 @@ import UIKit
 @preconcurrency import FirebaseAuth
 @preconcurrency import FirebaseAuthUI
 
-// Define key used by Firebase for email in accountExists error userInfo
-// Note: Firebase might use FIRAuthErrorUserInfoEmailKey - verify if FUI doesn't work
 let FUIAuthErrorUserInfoEmailKey = "email"
+let AppleAuthProviderID = "apple.com"
 
 @MainActor
 internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthenticatorProtocol {
@@ -140,7 +139,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                     }
                 } else { authKitError = AuthError.makeFirebaseAuthError(error)
                     self.clearTemporaryCredentials()
-            } // Other domains
+            }
 
                 continuation.resume(throwing: authKitError) // Resume with Sendable Error
                 if dismissViewController {
@@ -156,4 +155,3 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
         }
     }
 }
-let AppleAuthProviderID = "apple.com"
