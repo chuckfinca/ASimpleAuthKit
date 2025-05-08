@@ -27,7 +27,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
     private func setupAuthUI() {
         self.authUI = FUIAuth.defaultAuthUI()
         guard let authUI = self.authUI else {
-            fatalError("AuthKit Config Error: FUIAuth nil. Call FirebaseApp.configure() first.")
+            fatalError("ASimpleAuthKit Config Error: FUIAuth nil. Call FirebaseApp.configure() first.")
         }
         authUI.delegate = self
         authUI.providers = config.providers
@@ -99,23 +99,23 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
             } else if let error = error { // Process non-Sendable error on MainActor
                 let nsError = error as NSError
                 print("FBAuth: Delegate error: \(nsError.domain), Code: \(nsError.code)")
-                var authKitError: AuthError // Must be Sendable
+                var authError: AuthError // Must be Sendable
 
                 if nsError.domain == FUIAuthErrorDomain {
                     switch nsError.code {
                     case Int(FUIAuthErrorCode.userCancelledSignIn.rawValue): // Cast for safety/consistency
-                        authKitError = .cancelled
+                        authError = .cancelled
                         self.clearTemporaryCredentials()
                     case Int(FUIAuthErrorCode.mergeConflict.rawValue): // Cast for safety/consistency
                         guard let c = nsError.userInfo[FUIAuthCredentialKey] as? AuthCredential else {
-                            authKitError = .missingLinkingInfo
+                            authError = .missingLinkingInfo
                             break
                         }
                         
                         self.existingCredentialForMergeConflict = c
-                        authKitError = .mergeConflictRequired
+                        authError = .mergeConflictRequired
                         dismissViewController = false
-                    default: authKitError = .firebaseUIError("UI Error (\(nsError.code)): \(error.localizedDescription)")
+                    default: authError = .firebaseUIError("UI Error (\(nsError.code)): \(error.localizedDescription)")
                         self.clearTemporaryCredentials()
                     }
 
@@ -123,25 +123,25 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                     switch nsError.code {
                     case Int(AuthErrorCode.accountExistsWithDifferentCredential.rawValue): // Cast rawValue
                         guard let pendingCred = nsError.userInfo[FUIAuthCredentialKey] as? AuthCredential else {
-                            authKitError = .missingLinkingInfo
+                            authError = .missingLinkingInfo
                             break
                         }
                         guard let attemptedEmail = nsError.userInfo[FUIAuthErrorUserInfoEmailKey] as? String else { // Extract email from ERROR
                             print("FirebaseAuthenticator Error: Could not find email in accountExists error userInfo.")
-                            authKitError = .missingLinkingInfo
+                            authError = .missingLinkingInfo
                             break
                         }
                         self.pendingCredentialForLinking = pendingCred // Store credential
-                        authKitError = .accountLinkingRequired(email: attemptedEmail) // Pass email
+                        authError = .accountLinkingRequired(email: attemptedEmail) // Pass email
                         dismissViewController = false // Keep UI
-                    default: authKitError = AuthError.makeFirebaseAuthError(error)
+                    default: authError = AuthError.makeFirebaseAuthError(error)
                         self.clearTemporaryCredentials()
                     }
-                } else { authKitError = AuthError.makeFirebaseAuthError(error)
+                } else { authError = AuthError.makeFirebaseAuthError(error)
                     self.clearTemporaryCredentials()
             }
 
-                continuation.resume(throwing: authKitError) // Resume with Sendable Error
+                continuation.resume(throwing: authError) // Resume with Sendable Error
                 if dismissViewController {
                     self.presentingViewController?.dismiss(animated: true)
                 } // Dismiss only if needed

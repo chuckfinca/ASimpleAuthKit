@@ -31,7 +31,7 @@ Use the Swift Package Manager. Add the following dependency to your `Package.swi
 ```swift
 // In Package.swift dependencies:
 dependencies: [
-    .package(url: "https://github.com/YOUR_GITHUB_USERNAME/ASimpleAuthKit.git", from: "1.0.0") // Replace with your URL and desired version
+    .package(url: "https://github.com/chuckfinca/ASimpleAuthKit.git", from: "0.1.0") // Replace with your URL and desired version
 ]
 ```
 
@@ -311,7 +311,7 @@ The package uses the **Firebase Emulator Suite** (specifically the Auth emulator
 
 1.  **Start Emulator:** Navigate to the package's root directory in your terminal and run:
     ```bash
-    firebase emulators:start --only auth --project authkit-test-project
+    firebase emulators:start --only auth --project asimpleauthkit-test-project
     ```
     *(This uses the dummy project ID specified in the test plist and start command).* Leave this terminal window running while you execute tests.
 2.  **Run Tests:**
