@@ -8,13 +8,14 @@ public protocol AuthServiceProtocol: ObservableObject {
     var statePublisher: Published<AuthState>.Publisher { get }
     var lastError: AuthError? { get }
     var lastErrorPublisher: Published<AuthError?>.Publisher { get }
+    var biometryTypeString: String { get }
 
     func signIn(from viewController: UIViewController) async
     func signOut()
     func authenticateWithBiometrics(reason: String) async
     func proceedWithMergeConflictResolution() async
     func cancelPendingAction()
-    
+
     /// **Must be called** when the AuthService instance is no longer needed
     /// to ensure proper cleanup of internal listeners (e.g., Firebase Auth state).
     /// In SwiftUI, call this from `.onDisappear` of the view owning the `@StateObject`.

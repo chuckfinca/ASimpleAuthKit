@@ -13,6 +13,10 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public var statePublisher: Published<AuthState>.Publisher { $state }
     public var lastErrorPublisher: Published<AuthError?>.Publisher { $lastError }
 
+    public var biometryTypeString: String {
+        return biometricAuthenticator.biometryTypeString
+    }
+
     // Dependencies
     private let config: AuthConfig
     private let firebaseAuthenticator: FirebaseAuthenticatorProtocol
@@ -126,13 +130,13 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         do {
             let user = try await firebaseAuthenticator.presentSignInUI(from: viewController)
             await handleSuccessfulSignIn(user: user)
-            
+
         } catch let e as AuthError {
             await handleSignInAuthError(e)
             if state.isPendingResolution || e == .cancelled || state == .requiresBiometrics {
                 dismiss = false
             }
-            
+
         } catch {
             handleSignInGenericError(error)
         }
@@ -154,9 +158,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             print("AuthService: Sign out OK.")
             // Always explicitly set state, listener might lag or not fire in all edge cases.
             setState(.signedOut)
-             if isTestMode {
-                 print("AuthService: (Test Mode) State set to signedOut.")
-             }
+            if isTestMode {
+                print("AuthService: (Test Mode) State set to signedOut.")
+            }
         } catch {
             print("AuthService: Sign out failed: \(error)")
             lastError = AuthError.makeFirebaseAuthError(error)
@@ -471,7 +475,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             throw specificError
         }
     }
-    
+
     // MARK: State
 
     private func handleAuthStateChange(firebaseUser: FirebaseAuth.User?) async {
@@ -484,41 +488,41 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             print("AuthService Listener: Firebase User PRESENT (UID: \(currentUser.uid)). Current AuthService State: \(currentAuthServiceState)")
 
             if currentAuthServiceState.isAuthenticating && currentAuthServiceState != .requiresBiometrics {
-                 print("AuthService Listener: Ignoring update because AuthService is currently authenticating: \(currentAuthServiceState)")
-                 return
-             }
+                print("AuthService Listener: Ignoring update because AuthService is currently authenticating: \(currentAuthServiceState)")
+                return
+            }
             if currentAuthServiceState.isPendingResolution {
                 print("AuthService Listener: Ignoring update because AuthService is pending user resolution: \(currentAuthServiceState)")
                 return
             }
 
             if case .signedIn(let existingUser) = currentAuthServiceState, existingUser.uid == currentUser.uid {
-                 print("AuthService Listener: State already .signedIn with correct user (\(currentUser.uid)). Re-checking biometrics requirement.")
-                 await checkBiometricsRequirement(for: currentUser)
-                 return
-             }
+                print("AuthService Listener: State already .signedIn with correct user (\(currentUser.uid)). Re-checking biometrics requirement.")
+                await checkBiometricsRequirement(for: currentUser)
+                return
+            }
             if currentAuthServiceState == .requiresBiometrics {
-                 print("AuthService Listener: State is .requiresBiometrics. Re-checking biometrics requirement against current Firebase user \(currentUser.uid).")
-                 await checkBiometricsRequirement(for: currentUser)
-                 return
+                print("AuthService Listener: State is .requiresBiometrics. Re-checking biometrics requirement against current Firebase user \(currentUser.uid).")
+                await checkBiometricsRequirement(for: currentUser)
+                return
             }
 
             print("AuthService Listener: Firebase user present, but AuthService state was \(currentAuthServiceState). Updating state based on listener.")
             await checkBiometricsRequirement(for: currentUser)
 
         } else {
-             // Firebase User is ABSENT (nil)
-             print("AuthService Listener: Firebase User ABSENT. Current AuthService State: \(currentAuthServiceState)")
+            // Firebase User is ABSENT (nil)
+            print("AuthService Listener: Firebase User ABSENT. Current AuthService State: \(currentAuthServiceState)")
 
-             if currentAuthServiceState != .signedOut && !currentAuthServiceState.isAuthenticating {
-                 print("AuthService Listener: Firebase user became nil. Clearing local data and setting state to signedOut.")
-                 clearLocalUserData()
-                 lastError = nil
-                 setState(.signedOut)
-             } else {
-                 print("AuthService Listener: Firebase user is nil, but AuthService state is already \(currentAuthServiceState). No state change needed.")
-             }
-         }
+            if currentAuthServiceState != .signedOut && !currentAuthServiceState.isAuthenticating {
+                print("AuthService Listener: Firebase user became nil. Clearing local data and setting state to signedOut.")
+                clearLocalUserData()
+                lastError = nil
+                setState(.signedOut)
+            } else {
+                print("AuthService Listener: Firebase user is nil, but AuthService state is already \(currentAuthServiceState). No state change needed.")
+            }
+        }
     }
 
     // --- Biometrics Check ---
@@ -530,9 +534,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     private func determineBiometricState(for user: AuthUser) async -> AuthState {
         // Precondition: User should not be anonymous here.
         guard !user.isAnonymous else {
-             print("AuthService Biometrics Logic ERROR: determineBiometricState called with anonymous user.")
-             return .signedIn(user) // Default to signedIn for anonymous, though shouldn't happen
-         }
+            print("AuthService Biometrics Logic ERROR: determineBiometricState called with anonymous user.")
+            return .signedIn(user) // Default to signedIn for anonymous, though shouldn't happen
+        }
 
         let lastUserID = await secureStorage.getLastUserID()
         let bioAvailable = biometricAuthenticator.isBiometricsAvailable
@@ -547,15 +551,15 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             // Save User ID ONLY if transitioning to .signedIn state AND
             // the stored ID is different OR biometrics just became unavailable.
             if lastUserID != user.uid || !bioAvailable {
-                 print("AuthService Biometrics Logic: Saving User ID \(user.uid). Reason: Stored ID='\(lastUserID ?? "nil")', BioAvailable=\(bioAvailable).")
-                 do {
-                     try await secureStorage.saveLastUserID(user.uid)
-                     print("AuthService Biometrics Logic: User ID saved successfully.")
-                 } catch {
-                     // Log error but proceed with state transition
-                     print("AuthService Biometrics Logic WARNING: Failed to save User ID \(user.uid) to secure storage: \(error.localizedDescription)")
-                     // Consider setting a specific lastError? For now, just log.
-                 }
+                print("AuthService Biometrics Logic: Saving User ID \(user.uid). Reason: Stored ID='\(lastUserID ?? "nil")', BioAvailable=\(bioAvailable).")
+                do {
+                    try await secureStorage.saveLastUserID(user.uid)
+                    print("AuthService Biometrics Logic: User ID saved successfully.")
+                } catch {
+                    // Log error but proceed with state transition
+                    print("AuthService Biometrics Logic WARNING: Failed to save User ID \(user.uid) to secure storage: \(error.localizedDescription)")
+                    // Consider setting a specific lastError? For now, just log.
+                }
             }
             return .signedIn(user)
         }
@@ -564,18 +568,18 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     /// Checks if biometrics should be required for the given user and updates the service state.
     /// Called after sign-in, linking, merge resolution, or by the auth state listener.
     private func checkBiometricsRequirement(for user: AuthUser) async {
-         guard !user.isAnonymous else {
-             print("AuthService Biometrics Check: Skipping for anonymous user \(user.uid).")
-             setState(.signedIn(user)) // Set state directly for anonymous user
-             return
-         }
+        guard !user.isAnonymous else {
+            print("AuthService Biometrics Check: Skipping for anonymous user \(user.uid).")
+            setState(.signedIn(user)) // Set state directly for anonymous user
+            return
+        }
 
-         // Determine the required state using the helper function
-         let determinedState = await determineBiometricState(for: user)
+        // Determine the required state using the helper function
+        let determinedState = await determineBiometricState(for: user)
 
-         // Update the overall service state
-         setState(determinedState)
-     }
+        // Update the overall service state
+        setState(determinedState)
+    }
 
     // MARK: - Test Helpers
     #if DEBUG
