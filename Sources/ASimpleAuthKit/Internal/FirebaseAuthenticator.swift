@@ -64,6 +64,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
 
     // MARK: - FUIAuthDelegate (nonisolated callback)
     nonisolated func authUI(_ authUI: FUIAuth, didSignInWith authDataResult: AuthDataResult?, error: Error?) {
+        
         let firebaseUser = authDataResult?.user
         Task { @MainActor [weak self, firebaseUser] in // Dispatch immediately to MainActor
             guard let self = self else { return }
@@ -72,13 +73,13 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                 self.presentingViewController?.dismiss(animated: true)
                 return
             }
-            
+
             self.currentSignInContinuation = nil // Clear immediately
 
             var dismissViewController = true // Assume dismissal unless linking/merge required
 
             if let localFirebaseUser = firebaseUser {
-                
+
                 // Now, interactions happen with localFirebaseUser within the MainActor context.
                 let user = AuthUser(firebaseUser: localFirebaseUser) // Create Sendable User instance.
                 print("FBAuth: Delegate success for \(user.uid)")
@@ -111,7 +112,7 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
                             authError = .missingLinkingInfo
                             break
                         }
-                        
+
                         self.existingCredentialForMergeConflict = c
                         authError = .mergeConflictRequired
                         dismissViewController = false
@@ -121,30 +122,52 @@ internal class FirebaseAuthenticator: NSObject, FUIAuthDelegate, FirebaseAuthent
 
                 } else if nsError.domain == AuthErrorDomain {
                     switch nsError.code {
-                    case Int(AuthErrorCode.accountExistsWithDifferentCredential.rawValue): // Cast rawValue
+                    case Int(AuthErrorCode.accountExistsWithDifferentCredential.rawValue):
                         guard let pendingCred = nsError.userInfo[FUIAuthCredentialKey] as? AuthCredential else {
-                            authError = .missingLinkingInfo
-                            break
+                            authError = .missingLinkingInfo; break
                         }
-                        guard let attemptedEmail = nsError.userInfo[FUIAuthErrorUserInfoEmailKey] as? String else { // Extract email from ERROR
+                        guard let attemptedEmail = nsError.userInfo[FUIAuthErrorUserInfoEmailKey] as? String else {
                             print("FirebaseAuthenticator Error: Could not find email in accountExists error userInfo.")
-                            authError = .missingLinkingInfo
-                            break
+                            authError = .missingLinkingInfo; break
                         }
                         self.pendingCredentialForLinking = pendingCred // Store credential
                         authError = .accountLinkingRequired(email: attemptedEmail) // Pass email
                         dismissViewController = false // Keep UI
-                    default: authError = AuthError.makeFirebaseAuthError(error)
+
+                    case Int(AuthErrorCode.emailAlreadyInUse.rawValue):
+                        // This error means the user tried to CREATE an email/password account
+                        // but the email is already associated with an existing Firebase user
+                        // (could be federated or another email/password user if "one account per email" is on).
+                        // We don't get the password they attempted from FirebaseUI.
+                        self.clearTemporaryCredentials() // Ensure no stale pending credential from other flows
+
+                        if let emailFromError = nsError.userInfo[FUIAuthErrorUserInfoEmailKey] as? String {
+                            print("FBAuth: Delegate hit emailAlreadyInUse for email: \(emailFromError). Triggering account linking guidance.")
+                            // We will guide them to sign in with an existing method.
+                            // If they succeed, they are just signed in. No new email/password is linked *here*
+                            // because we don't have the attempted password.
+                            authError = .accountLinkingRequired(email: emailFromError) // Re-use the same AuthError type.
+                            // AuthService will fetch sign-in methods for this email.
+                        } else {
+                            print("FBAuth: Delegate hit emailAlreadyInUse but no email found in userInfo.")
+                            authError = AuthError.makeFirebaseAuthError(error) // Fallback
+                        }
+                        // IMPORTANT: For this path, self.pendingCredentialForLinking will be nil.
+                        dismissViewController = false // Keep FirebaseUI presented to show our linking prompt via CardScanView.
+
+                    default:
+                        authError = AuthError.makeFirebaseAuthError(error)
                         self.clearTemporaryCredentials()
                     }
-                } else { authError = AuthError.makeFirebaseAuthError(error)
+                } else {
+                    authError = AuthError.makeFirebaseAuthError(error)
                     self.clearTemporaryCredentials()
-            }
+                }
 
-                continuation.resume(throwing: authError) // Resume with Sendable Error
-                if dismissViewController {
+                continuation.resume(throwing: authError)
+                if dismissViewController { // Only dismiss if not heading to a linking/merge state
                     self.presentingViewController?.dismiss(animated: true)
-                } // Dismiss only if needed
+                }
 
             } else {
                 print("Auth Warning: Delegate unknown state.")
