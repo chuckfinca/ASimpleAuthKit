@@ -36,9 +36,10 @@ let package = Package(
                 "ASimpleAuthKit",
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
             ],
+            path: "Tests/ASimpleAuthKitTests",
             resources: [
                 .copy("GoogleService-Info-Tests.plist")
             ]
-        ),
+        )
     ]
 )

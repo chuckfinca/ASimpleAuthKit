@@ -17,7 +17,7 @@ final class AuthServiceTests: XCTestCase {
     var dummyVC: DummyViewController!
 
     private static var firebaseConfigured = false
-    private let authEmulatorHost = "localhost"
+    private let authEmulatorHost = "127.0.0.1"
     private let authEmulatorPort = 9099
 
     // MARK: Lifecycle
@@ -30,6 +30,8 @@ final class AuthServiceTests: XCTestCase {
             // It's crucial for tests that might interact with Auth.auth() directly.
             print("AuthServiceTests: Configuring Firebase and Auth Emulator for tests (one-time)...")
             guard let fileURL = Bundle.module.url(forResource: "GoogleService-Info-Tests", withExtension: "plist") else {
+
+//            guard let fileURL = Bundle(for: AuthServiceTests.self).url(forResource: "GoogleService-Info-Tests", withExtension: "plist") else {
                 throw TestError.testSetupFailed("GoogleService-Info-Tests.plist not found")
             }
             guard let fileopts = FirebaseOptions(contentsOfFile: fileURL.path) else {
