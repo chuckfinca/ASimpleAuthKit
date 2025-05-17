@@ -1,7 +1,7 @@
 # project.yml
 name: ASimpleAuthKitDevProject # Name for the .xcodeproj that will be generated
 
-options:
+# options:
   # Optional: Set deployment target, etc.
   # minimumDeploymentTarget: "16.0"
   # createIntermediateGroups: true
