@@ -1,6 +1,7 @@
 import Foundation
 import Combine
-import UIKit
+import UIKit // For presentingViewController in some auth methods
+import FirebaseAuth // For AuthCredential (exposed if AuthError case includes it)
 
 @MainActor
 public protocol AuthServiceProtocol: ObservableObject {
@@ -8,31 +9,45 @@ public protocol AuthServiceProtocol: ObservableObject {
     var statePublisher: Published<AuthState>.Publisher { get }
     var lastError: AuthError? { get }
     var lastErrorPublisher: Published<AuthError?>.Publisher { get }
-    var biometryTypeString: String { get }
+    var biometryTypeString: String { get } // For UI display
 
-    func signIn(from viewController: UIViewController) async
+    // --- Core Authentication Methods ---
+    func signInWithEmail(email: String, password: String) async
+    func createAccountWithEmail(email: String, password: String, displayName: String?) async
+    func signInWithGoogle(presentingViewController: UIViewController) async
+    func signInWithApple(presentingViewController: UIViewController) async // Nonce generation handled internally by AuthService
+    
     func signOut()
+    func sendPasswordResetEmail(to email: String) async
+
+    // --- State Resolution Methods ---
     func authenticateWithBiometrics(reason: String) async
-    func proceedWithMergeConflictResolution() async
+    func proceedWithAccountLink(signInAgainWithProvider: @escaping (UIViewController) async throws -> AuthUser) async // More abstract linking
+    func proceedWithMergeConflictResolution() async // This might be re-evaluated based on how merge conflicts surface now
     func cancelPendingAction()
 
-    /// **Must be called** when the AuthService instance is no longer needed
-    /// to ensure proper cleanup of internal listeners (e.g., Firebase Auth state).
-    /// In SwiftUI, call this from `.onDisappear` of the view owning the `@StateObject`.
+    // --- Lifecycle ---
     func invalidate()
 }
 
-public extension AuthServiceProtocol { // Default implementations only
-
+// Default implementations for convenience
+public extension AuthServiceProtocol {
     func authenticateWithBiometrics(reason: String = "Sign in to your account") async {
         await authenticateWithBiometrics(reason: reason)
     }
 
-    func proceedWithMergeConflictResolution() async {
-        print("AuthServiceProtocol: Default proceed...")
+    // Default for createAccountWithEmail without displayName
+    func createAccountWithEmail(email: String, password: String) async {
+        await createAccountWithEmail(email: email, password: password, displayName: nil)
     }
 
-    func cancelPendingAction() {
-        print("AuthServiceProtocol: Default cancel...")
+    // Default proceedWithMergeConflictResolution might just log if not implemented specifically
+    func proceedWithMergeConflictResolution() async {
+        print("AuthServiceProtocol: Default proceedWithMergeConflictResolution called. Ensure specific implementation if needed.")
     }
+
+    // Default cancelPendingAction is already provided in your original file, can be kept or removed if not desired
+    // func cancelPendingAction() {
+    //     print("AuthServiceProtocol: Default cancelPendingAction called.")
+    // }
 }

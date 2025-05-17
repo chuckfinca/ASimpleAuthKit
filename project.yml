@@ -1,0 +1,72 @@
+# project.yml
+name: ASimpleAuthKitDevProject # Name for the .xcodeproj that will be generated
+
+options:
+  # Optional: Set deployment target, etc.
+  # minimumDeploymentTarget: "16.0"
+  # createIntermediateGroups: true
+  # developmentLanguage: en
+
+packages: # This section tells XcodeGen about external or local Swift Packages
+  ASimpleAuthKitPackage: # An arbitrary name you give this package reference within project.yml
+    path: . # Points to the root directory of your current Swift Package
+
+targets:
+  # This target in the .xcodeproj will build your ASimpleAuthKit library
+  ASimpleAuthKitLib:
+    type: framework # Or static.library, depending on how you want it structured in the project
+    platform: iOS
+    # Tell XcodeGen to use the 'ASimpleAuthKit' target from 'ASimpleAuthKitPackage'
+    dependencies:
+      - package: ASimpleAuthKitPackage # Refers to the package defined above
+        product: ASimpleAuthKit      # Name of the library product in your Package.swift
+
+  # This target in the .xcodeproj will build and run your ASimpleAuthKitTests
+  ASimpleAuthKitTests_XcodeprojTarget: # Needs a distinct name from your Package.swift test target
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      # You explicitly tell XcodeGen where the test sources are.
+      # It doesn't automatically infer them from the Package.swift for this .xcodeproj target.
+      - path: Tests/ASimpleAuthKitTests
+        # Optional: exclude files if needed
+        # excludes:
+        #   - "some_other_file_in_tests_folder.swift"
+    settings:
+      # --- THIS IS THE KEY PART ---
+      CODE_SIGN_ENTITLEMENTS: Tests/ASimpleAuthKitTests/ASimpleAuthKitTests.entitlements
+      PRODUCT_BUNDLE_IDENTIFIER: oi.appsimple.ASimpleAuthKitTests.XcodeprojTarget # Ensure a unique bundle ID
+      # You might need to specify test host application settings if your tests require it
+      # TEST_HOST: $(BUILT_PRODUCTS_DIR)/YourApp.app/YourApp 
+      # For library tests, often no test host is needed.
+    info: # Define an Info.plist for the test bundle
+      path: Tests/ASimpleAuthKitTests/Info.plist # Create a minimal Info.plist for the test target if you don't have one
+      properties:
+        CFBundleDevelopmentRegion: "$(DEVELOPMENT_LANGUAGE)"
+        CFBundleExecutable: "$(EXECUTABLE_NAME)"
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: "$(PRODUCT_NAME)"
+        CFBundlePackageType: "BNDL"
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+    dependencies:
+      - target: ASimpleAuthKitLib # The test target depends on the library target from this .xcodeproj
+      # If your tests directly depend on Firebase from Package.swift in a way not covered by linking the lib:
+      # You might need to also explicitly link Firebase products here if your tests import them directly
+      # and are not getting them transitively through ASimpleAuthKitLib in the generated project.
+      # This can get a bit tricky depending on how SPM dependencies are resolved in the generated project.
+      # Often, depending on your ASimpleAuthKitLib (which itself depends on Firebase via Package.swift) is enough.
+
+schemes:
+  ASimpleAuthKitDevScheme: # A scheme to build and test within the generated .xcodeproj
+    build:
+      targets:
+        ASimpleAuthKitLib: all
+        ASimpleAuthKitTests_XcodeprojTarget: [test] # specify that this target is for testing
+    test:
+      targets:
+        - ASimpleAuthKitTests_XcodeprojTarget
+      # Optional: environmentVariables, commandLineArguments for tests
+      # environmentVariables:
+      #   "MY_TEST_VAR": "true"
