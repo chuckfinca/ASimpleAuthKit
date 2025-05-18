@@ -94,7 +94,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Google sign-in.")
-        guard let clientID = FirebaseApp.app()?.options.clientID else {
+        guard (FirebaseApp.app()?.options.clientID) != nil else {
             print("FirebaseAuthenticator: Google Sign-In error - Firebase Client ID not found.")
             throw AuthError.configurationError("Google Sign-In: Firebase Client ID missing.")
         }

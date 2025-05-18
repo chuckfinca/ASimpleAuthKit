@@ -1,6 +1,6 @@
 import Foundation
 import LocalAuthentication // For LAError constants
-import FirebaseAuth // For AuthErrorCode constants and AuthCredential
+@preconcurrency import FirebaseAuth // For AuthErrorCode constants and AuthCredential
 
 // Define a Sendable struct to hold Firebase error details safely across actors
 public struct FirebaseErrorData: Error, Equatable, Sendable {
@@ -47,7 +47,7 @@ public enum AuthError: Error, Equatable, Sendable {
             // we'd need to compare properties of AuthCredential if possible, or rely on context.
             // Often, the presence of a credential vs nil is enough for logic.
             return lEmail == rEmail && (lCred == nil && rCred == nil || lCred != nil && rCred != nil)
-        case (.mergeConflictRequired(let lCred), .mergeConflictRequired(let rCred)):
+        case (.mergeConflictRequired(_), .mergeConflictRequired(_)):
             // Similar to above, AuthCredential comparison is tricky.
             // For now, consider them equal if both are mergeConflictRequired.
             return true // Or compare provider IDs if useful: lCred.provider == rCred.provider
