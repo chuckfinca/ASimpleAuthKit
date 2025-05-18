@@ -374,7 +374,6 @@ ASimpleAuthKit is configured via the AuthConfig struct passed to AuthService's i
 * **AuthUser**: Struct holding basic information about the authenticated user.
 * **AuthError**: Enum for detailed error information.
 * **RootViewControllerFinder.swift**: (Included in package) Helper findTopMostViewController() for presenting OS-level UIs from SwiftUI.
-
 ## Error Handling
 
 Observe `authService.lastError` in your UI to display relevant error messages. The AuthError enum provides `.localizedDescription` and specific cases (e.g., `.wrongPassword`, `.emailAlreadyInUse`, `.accountLinkingRequired`) for robust error handling and guiding the user.

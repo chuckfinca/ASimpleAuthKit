@@ -22,8 +22,8 @@ public protocol AuthServiceProtocol: ObservableObject {
 
     // --- State Resolution Methods ---
     func authenticateWithBiometrics(reason: String) async
-    func proceedWithAccountLink(signInAgainWithProvider: @escaping (UIViewController) async throws -> AuthUser) async // More abstract linking
-    func proceedWithMergeConflictResolution() async // This might be re-evaluated based on how merge conflicts surface now
+    // func proceedWithAccountLink(signInAgainWithProvider: @escaping (UIViewController) async throws -> AuthUser) async // REMOVED
+    // func proceedWithMergeConflictResolution() async // REMOVED
     func cancelPendingAction()
 
     // --- Lifecycle ---
@@ -40,14 +40,4 @@ public extension AuthServiceProtocol {
     func createAccountWithEmail(email: String, password: String) async {
         await createAccountWithEmail(email: email, password: password, displayName: nil)
     }
-
-    // Default proceedWithMergeConflictResolution might just log if not implemented specifically
-    func proceedWithMergeConflictResolution() async {
-        print("AuthServiceProtocol: Default proceedWithMergeConflictResolution called. Ensure specific implementation if needed.")
-    }
-
-    // Default cancelPendingAction is already provided in your original file, can be kept or removed if not desired
-    // func cancelPendingAction() {
-    //     print("AuthServiceProtocol: Default cancelPendingAction called.")
-    // }
 }
