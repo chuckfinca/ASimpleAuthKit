@@ -2,9 +2,9 @@ import Foundation
 import FirebaseAuth
 import FirebaseCore
 import AuthenticationServices // For Sign in with Apple
-import GoogleSignIn // For Google Sign-In
+import GoogleSignIn
 import GoogleSignInSwift
-import UIKit // For presentingViewController
+import UIKit
 
 @MainActor
 internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
@@ -22,10 +22,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     // Stores the credential the user just attempted if Firebase returns "accountExistsWithDifferentCredential"
     private(set) var pendingCredentialForLinking: AuthCredential?
 
-    // For merge conflicts (though direct API usage might change how these are encountered)
-    // We might not need this if merge is always a consequence of a linking attempt with a conflict.
-    // private(set) var existingCredentialForMergeConflict: AuthCredential?
-
     internal init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
         self.config = config
         self.secureStorage = secureStorage
@@ -35,8 +31,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     func clearTemporaryCredentials() {
         pendingCredentialForLinking = nil
-        // existingCredentialForMergeConflict = nil
-        currentRawNonceForAppleSignIn = nil // Clear nonce too
+        currentRawNonceForAppleSignIn = nil
         print("FirebaseAuthenticator (Direct): Cleared temporary credentials and nonce.")
     }
 
@@ -120,8 +115,8 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 }
 
                 let credential = GoogleAuthProvider.credential(withIDToken: idToken,
-                                                              accessToken: user.accessToken.tokenString)
-                
+                                                               accessToken: user.accessToken.tokenString)
+
                 Task { @MainActor in // Ensure Firebase auth runs on MainActor
                     do {
                         let authDataResult = try await Auth.auth().signIn(with: credential)
@@ -153,7 +148,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         let authorizationController = ASAuthorizationController(authorizationRequests: [request])
         authorizationController.delegate = self
         authorizationController.presentationContextProvider = self // `self` provides the window
-        
+
         // Store the continuation to be resumed by the delegate
         return try await withCheckedThrowingContinuation { continuation in
             self.currentAppleSignInContinuation = continuation
@@ -163,7 +158,8 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     // ASAuthorizationControllerDelegate methods
     nonisolated public func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
-        Task { @MainActor [weak self] in // Switch to MainActor
+
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
             guard let continuation = self.currentAppleSignInContinuation else {
                 print("FirebaseAuthenticator: Apple Sign-In - No continuation found.")
@@ -200,17 +196,17 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 rawNonce: rawNonce,
                 fullName: appleIDCredential.fullName // Can be nil after first sign-in
             )
-            
+
             // Stable Apple User ID
             let appleUserID = appleIDCredential.user
 
             do {
                 let authDataResult = try await Auth.auth().signIn(with: firebaseCredential)
                 let user = AuthUser(firebaseUser: authDataResult.user)
-                
+
                 // Persist Apple User ID mapping if configured
                 self.config.appleUserPersister?(appleUserID, user.uid)
-                
+
                 await self.handleSuccessfulAuth(for: user, fromProvider: "Apple")
                 continuation.resume(returning: user)
             } catch {
@@ -228,7 +224,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 return
             }
             self.currentAppleSignInContinuation = nil // Clear immediately
-            self.currentRawNonceForAppleSignIn = nil  // Clear nonce
+            self.currentRawNonceForAppleSignIn = nil // Clear nonce
 
             let nsError = error as NSError
             if nsError.domain == ASAuthorizationErrorDomain && nsError.code == ASAuthorizationError.canceled.rawValue {
@@ -250,14 +246,14 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         // The caller (AuthService) will have the VC.
         // This needs careful handling if the VC is not yet in the window hierarchy.
         guard let keyWindow = UIApplication.shared.connectedScenes
-            .filter({$0.activationState == .foregroundActive})
-            .map({$0 as? UIWindowScene})
-            .compactMap({$0})
+            .filter({ $0.activationState == .foregroundActive })
+            .map({ $0 as? UIWindowScene })
+            .compactMap({ $0 })
             .first?.windows
-            .filter({$0.isKeyWindow}).first else {
-                // Fallback or error, though this should ideally always be available
-                // when Apple Sign In is triggered.
-                fatalError("ASimpleAuthKit: Could not find key window for Apple Sign In presentation.")
+            .filter({ $0.isKeyWindow }).first else {
+            // Fallback or error, though this should ideally always be available
+            // when Apple Sign In is triggered.
+            fatalError("ASimpleAuthKit: Could not find key window for Apple Sign In presentation.")
         }
         return keyWindow
     }
@@ -334,16 +330,16 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 return .accountLinkingRequired(email: conflictingEmail, pendingCredential: nil)
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
-                 // This error is nuanced. It can happen if:
-                 // 1. You try to LINK a credential (e.g. Google) to User A, but that Google account
-                 //    is ALREADY linked to a *different* Firebase User B. This is a hard stop/merge scenario.
-                 // 2. Sometimes, it might appear if you try to sign-in with a credential that is already
-                 //    linked to the *current* user, but this is less common and usually a success.
-                 print("FirebaseAuthenticator: Credential already in use by another account.")
-                 // This is a tricky one. For now, map it to a generic firebaseAuthError.
-                 // AuthService might need more sophisticated logic if it wants to handle potential merges.
-                 // For now, the linking will fail, and this error will be shown.
-                 // A more advanced system might try to detect if this implies a merge is possible.
+                // This error is nuanced. It can happen if:
+                // 1. You try to LINK a credential (e.g. Google) to User A, but that Google account
+                //    is ALREADY linked to a *different* Firebase User B. This is a hard stop/merge scenario.
+                // 2. Sometimes, it might appear if you try to sign-in with a credential that is already
+                //    linked to the *current* user, but this is less common and usually a success.
+                print("FirebaseAuthenticator: Credential already in use by another account.")
+                // This is a tricky one. For now, map it to a generic firebaseAuthError.
+                // AuthService might need more sophisticated logic if it wants to handle potential merges.
+                // For now, the linking will fail, and this error will be shown.
+                // A more advanced system might try to detect if this implies a merge is possible.
                 return AuthError.firebaseAuthError(FirebaseErrorData(code: nsError.code, domain: nsError.domain, message: "This sign-in method is already associated with a different user account."))
 
 

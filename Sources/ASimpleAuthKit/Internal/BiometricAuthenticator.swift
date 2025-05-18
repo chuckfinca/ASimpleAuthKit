@@ -29,7 +29,6 @@ internal class BiometricAuthenticator: BiometricAuthenticatorProtocol {
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, evaluateError in
             DispatchQueue.main.async {
                 if success {
-                    // The completion is sendable, ignore the warning
                     completion(.success(()))
                 }
                 else {

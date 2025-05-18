@@ -1,7 +1,7 @@
 import Foundation
 import Combine
-import UIKit // For presentingViewController in some auth methods
-import FirebaseAuth // For AuthCredential (exposed if AuthError case includes it)
+import UIKit
+import FirebaseAuth
 
 @MainActor
 public protocol AuthServiceProtocol: ObservableObject {
@@ -16,14 +16,12 @@ public protocol AuthServiceProtocol: ObservableObject {
     func createAccountWithEmail(email: String, password: String, displayName: String?) async
     func signInWithGoogle(presentingViewController: UIViewController) async
     func signInWithApple(presentingViewController: UIViewController) async // Nonce generation handled internally by AuthService
-    
+
     func signOut()
     func sendPasswordResetEmail(to email: String) async
 
     // --- State Resolution Methods ---
     func authenticateWithBiometrics(reason: String) async
-    // func proceedWithAccountLink(signInAgainWithProvider: @escaping (UIViewController) async throws -> AuthUser) async // REMOVED
-    // func proceedWithMergeConflictResolution() async // REMOVED
     func cancelPendingAction()
 
     // --- Lifecycle ---

@@ -100,8 +100,6 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     // --- Stored credentials for inspection / linking flow simulation ---
     private(set) var pendingCredentialForLinking: AuthCredential?
-    // existingCredentialForMergeConflict may not be needed explicitly if merge is part of linking failure
-    // private(set) var existingCredentialForMergeConflict: AuthCredential?
 
 
     // --- Call Tracking ---
@@ -239,7 +237,6 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     func clearTemporaryCredentials() {
         clearTemporaryCredentialsCallCount += 1
         pendingCredentialForLinking = nil
-        // existingCredentialForMergeConflict = nil
         print("MockFirebaseAuthenticator: clearTemporaryCredentials called. Mock's pending cred cleared.")
     }
 
@@ -253,7 +250,6 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         linkCredentialResultProvider = nil
 
         pendingCredentialForLinking = nil
-        // existingCredentialForMergeConflict = nil
 
         signInWithEmailCallCount = 0
         createAccountWithEmailCallCount = 0

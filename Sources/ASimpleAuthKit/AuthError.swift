@@ -1,6 +1,6 @@
 import Foundation
-import LocalAuthentication // For LAError constants
-@preconcurrency import FirebaseAuth // For AuthErrorCode constants and AuthCredential
+import LocalAuthentication
+@preconcurrency import FirebaseAuth
 
 // Define a Sendable struct to hold Firebase error details safely across actors
 public struct FirebaseErrorData: Error, Equatable, Sendable {
@@ -74,7 +74,6 @@ public enum AuthError: Error, Equatable, Sendable {
                 case AuthErrorCode.userNotFound.rawValue:
                     return "No account found with this email address."
                 case AuthErrorCode.emailAlreadyInUse.rawValue:
-                    // This specific message might be overridden by how we handle it (guiding to link)
                     return "This email address is already in use by another account."
                 case AuthErrorCode.credentialAlreadyInUse.rawValue:
                     return "This sign-in method is already linked to an account, possibly a different one."

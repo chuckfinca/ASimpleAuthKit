@@ -431,11 +431,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     }
 
-    // --- START CHANGE 2: API Cleanup ---
-    // `proceedWithAccountLink` method and its comments REMOVED.
-    // `proceedWithMergeConflictResolution` method and its comments REMOVED.
-    // --- END CHANGE 2 ---
-
 
     // MARK: - Private Helper Methods
     private func setState(_ newState: AuthState) {
