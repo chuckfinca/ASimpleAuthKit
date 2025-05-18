@@ -1,7 +1,7 @@
 import Foundation
 import Combine
-import FirebaseAuth // For AuthCredential, User, etc.
-import UIKit // For UIViewController
+import FirebaseAuth
+import UIKit
 
 @MainActor
 public class AuthService: ObservableObject, AuthServiceProtocol {
@@ -132,13 +132,13 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             lastError = .configurationError("Email address cannot be empty for password reset.")
             return
         }
-        
+
         // Store if we were already in an auth flow initiated by another operation.
         // This helps decide if this method should be responsible for reverting the .authenticating state.
         let wasAlreadyAuthenticating = state.isAuthenticating
         setState(.authenticating("Sending Reset Email..."))
         lastError = nil
-        
+
         do {
             try await firebaseAuthenticator.sendPasswordResetEmail(to: email)
             // What state to go to here? Usually, stay on the current screen and show a success message.
@@ -146,8 +146,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             // The UI should handle displaying a confirmation.
             print("AuthService: Password reset email initiated for \(email).")
             // UI should show a message like "If an account exists for this email, a reset link has been sent."
-            
-            // --- START CHANGE 1: sendPasswordResetEmail state handling ---
+
             // If this method set the state to .authenticating("Sending Reset Email..."),
             // then it's responsible for reverting it.
             // We revert to a state consistent with the current Firebase user.
@@ -162,29 +161,25 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             }
             // If wasAlreadyAuthenticating was true, another operation is in progress,
             // and this password reset was a side-task. Let the main auth flow resolve the state.
-            // --- END CHANGE 1 ---
+
         } catch let e as AuthError {
             lastError = e
-            // --- START CHANGE 1 (Error Path): sendPasswordResetEmail state handling ---
             if !wasAlreadyAuthenticating {
                 if let firebaseUser = Auth.auth().currentUser {
-                     await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
+                    await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
                 } else {
                     setState(.signedOut)
                 }
             }
-            // --- END CHANGE 1 (Error Path) ---
         } catch {
             lastError = .unknown
-            // --- START CHANGE 1 (Generic Error Path): sendPasswordResetEmail state handling ---
             if !wasAlreadyAuthenticating {
                 if let firebaseUser = Auth.auth().currentUser {
-                     await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
+                    await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
                 } else {
                     setState(.signedOut)
                 }
             }
-            // --- END CHANGE 1 (Generic Error Path) ---
         }
     }
 
@@ -198,7 +193,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             print("AuthService: Firebase sign-out call successful.")
             // Explicitly clear local data and set state immediately
             // The listener will still fire but should find the state already correct.
-            clearLocalUserDataAndSetSignedOutState() // <<<< CALL IT HERE
+            clearLocalUserDataAndSetSignedOutState()
             lastError = nil // Ensure error is cleared on successful sign-out
             print("AuthService: State set to signedOut and local data cleared synchronously after sign out call.")
         } catch {
@@ -226,7 +221,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         setState(.authenticating(biometricAuthenticator.biometryTypeString))
         lastError = nil
         do {
-            try await performBiometricAuthenticationInternal(reason: reason) // Renamed internal helper
+            try await performBiometricAuthenticationInternal(reason: reason)
 
             guard let refreshedUser = Auth.auth().currentUser, refreshedUser.uid == uid else {
                 lastError = .unknown // User changed during bio auth
@@ -260,7 +255,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     internal enum AuthActionType { case signIn, signUp, link }
 
-    // AuthService.swift
     private func performAuthOperation(
         authAction: @escaping () async throws -> AuthUser,
         authActionType: AuthActionType // signIn, signUp, link (link might not be used as an explicit type here)
@@ -318,7 +312,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             // handleAuthOperationError will be called. It needs to preserve the linking context.
             await handleAuthOperationError(e, authActionType: authActionType, wasReAuthForLinking: isReAuthForLinking)
         } catch {
-            // ... (generic error handling as before)
             print("AuthService: Unknown error during auth operation: \(error.localizedDescription)")
             lastError = .unknown
             if !isReAuthForLinking { // Only fully reset if not a failed re-auth for linking
@@ -345,8 +338,8 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
             // --- START CHANGE 3: existingProviders comment update ---
             let methods: [String] = [] // TODO: Ideally, fetch actual providers using Auth.auth().fetchSignInMethods(forEmail: email).
-                                       // For now, UI must handle fetching these if needed to guide the user more specifically.
-                                       // See README for example UI logic.
+            // For now, UI must handle fetching these if needed to guide the user more specifically.
+            // See README for example UI logic.
             // --- END CHANGE 3 ---
             print("AuthService: Existing sign-in methods for \(email): \(methods.joined(separator: ", ")) (Note: list is currently hardcoded empty)")
             // Pass the *original* pending credential (if any) to the state for context,
@@ -439,14 +432,14 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             // If the state is the same but it's an error state, ensure lastError is also considered.
             // This check is mostly to avoid redundant print statements if nothing truly changed.
             if case .requiresAccountLinking(let lEmail, let lProviders) = newState,
-               case .requiresAccountLinking(let rEmail, let rProviders) = oldState {
+                case .requiresAccountLinking(let rEmail, let rProviders) = oldState {
                 // Allow if email or providers changed, or if lastError changed
                 // For now, providers don't change in this state from AuthService, so email and lastError are key.
                 if lEmail == rEmail && lProviders == rProviders { // Basic check, lastError is observed separately
                     // return // Could return if we are sure no other context change (like lastError) needs processing
                 }
             } else {
-                 return
+                return
             }
         }
         print("AuthService State Change: \(oldState) -> \(newState)")
