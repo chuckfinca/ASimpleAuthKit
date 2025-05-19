@@ -320,7 +320,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
                 // If it was a re-auth for linking that failed with an unknown error,
                 // revert to .requiresAccountLinking state.
                 // Ensure providers list is handled consistently (currently empty).
-                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", existingProviders: []))
+                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: nil))
             }
         }
     }
@@ -330,34 +330,36 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         self.lastError = error // Always set the most recent error
 
         switch error {
-        case .accountLinkingRequired(let email, let credentialToLink):
-            // This error comes from FirebaseAuthenticator.processFirebaseError
-            // It means an account exists for 'email', and 'credentialToLink' is what the user just tried.
-            self.pendingCredentialToLinkAfterReauth = credentialToLink // Store this for after re-auth
-            self.emailForLinking = email // Store email for UI and potential re-fetch
+        case .accountLinkingRequired(let email, let attemptedProviderIdFromError):
+            // The actual AuthCredential (if any) is now stored within FirebaseAuthenticator.
+            // AuthService needs to retrieve it from there to store in its own pendingCredentialToLinkAfterReauth.
+            self.pendingCredentialToLinkAfterReauth = self.firebaseAuthenticator.pendingCredentialForLinking
+            self.emailForLinking = email
 
-            // --- START CHANGE 3: existingProviders comment update ---
-            let methods: [String] = [] // TODO: Ideally, fetch actual providers using Auth.auth().fetchSignInMethods(forEmail: email).
-            // For now, UI must handle fetching these if needed to guide the user more specifically.
-            // See README for example UI logic.
-            // --- END CHANGE 3 ---
-            print("AuthService: Existing sign-in methods for \(email): \(methods.joined(separator: ", ")) (Note: list is currently hardcoded empty)")
-            // Pass the *original* pending credential (if any) to the state for context,
-            // though UI might not directly use it for display.
-            setState(.requiresAccountLinking(email: email, existingProviders: methods.sorted()))
+            // Determine the providerId to show in the AuthState.
+            // It should primarily be what the error tells us.
+            // If the error for some reason didn't have it, we could try to derive it from our stored credential,
+            // but the error *should* have it now.
+            let finalAttemptedProviderId = attemptedProviderIdFromError ?? self.pendingCredentialToLinkAfterReauth?.provider
 
-        case .mergeConflictError(_):
-            // This error would also come from FirebaseAuthenticator if it detects a situation
-            // that requires a merge. The credentials would be part of the error.
-            // For now, we'll just set the state. Actual merge logic needs Firebase User input.
-            setState(.requiresMergeConflictResolution) // Need to adapt AuthState for this if we keep it
+            print("AuthService: Account linking required for \(email). Attempted with provider: \(finalAttemptedProviderId ?? "unknown"). Actual pending link credential in AuthService: \(self.pendingCredentialToLinkAfterReauth != nil)")
+
+            // AuthState.requiresAccountLinking takes (email, attemptedProviderId)
+            setState(.requiresAccountLinking(email: email, attemptedProviderId: finalAttemptedProviderId))
+
+        case .mergeConflictError(let message): // Handles the string-based merge error
+            print("AuthService: Merge conflict error received: \(message)")
+            // The AuthState.requiresMergeConflictResolution is a generic signal.
+            // The UI would show the message from lastError.
+            setState(.requiresMergeConflictResolution)
 
         case .cancelled:
             if wasReAuthForLinking { // If user cancelled the Google/Apple UI during re-auth
                 print("AuthService: Re-authentication for linking cancelled. Staying in .requiresAccountLinking.")
-                // Ensure state reverts to .requiresAccountLinking with the original email and pending cred
-                // (providers list remains empty based on current logic)
-                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", existingProviders: []))
+                // The attemptedProviderId might be nil if the cancellation happened before provider determination,
+                // or it could be the provider of pendingCredentialToLinkAfterReauth.
+                // For simplicity, passing nil, as the specific provider might not be relevant if user cancelled.
+                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: self.pendingCredentialToLinkAfterReauth?.provider))
             } else {
                 // Standard cancellation of initial sign-in/sign-up
                 clearLocalUserDataAndSetSignedOutState()
@@ -377,7 +379,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
                 // Stay in .requiresAccountLinking to allow another attempt or cancellation by user.
                 print("AuthService: Re-authentication for linking failed with error. Staying in .requiresAccountLinking.")
                 // (providers list remains empty based on current logic)
-                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", existingProviders: []))
+                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: nil))
             } else if !state.isPendingResolution {
                 // If not a re-auth for linking AND not already in a pending resolution state,
                 // then clear user data and go to signedOut.

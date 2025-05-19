@@ -1,6 +1,6 @@
 import Foundation
 import LocalAuthentication
-@preconcurrency import FirebaseAuth
+@preconcurrency import FirebaseAuth // For AuthErrorCode constants. AuthCredential is not directly in Sendable errors.
 
 // Define a Sendable struct to hold Firebase error details safely across actors
 public struct FirebaseErrorData: Error, Equatable, Sendable {
@@ -22,11 +22,25 @@ public enum AuthError: Error, Equatable, Sendable {
     case biometricsFailed(LAError.Code?)
     case firebaseAuthError(FirebaseErrorData)
     case accountLinkingError(String) // General error during linking process
-    case mergeConflictError(String) // General error during merge process
-    case accountLinkingRequired(email: String, pendingCredential: AuthCredential?) // If an account exists with this email, here's the credential the user just tried
-    case mergeConflictRequired(existingCredential: AuthCredential) // If a merge conflict occurs
+
+    // MODIFIED: Simplified merge conflict representation.
+    // The specific conflicting credential isn't passed in the error itself to maintain Sendable.
+    // FirebaseAuthenticator or AuthService would hold/manage the actual credential if needed for resolution.
+    case mergeConflictError(String) // General error during merge process, message can contain details.
+
+    // MODIFIED: No longer holds AuthCredential directly to ensure Sendable conformance.
+    // The actual credential is held by FirebaseAuthenticator/AuthService internally.
+    case accountLinkingRequired(email: String, attemptedProviderId: String?)
+
+    // REMOVED: mergeConflictRequired(existingCredential: AuthCredential)
+    // Replaced by relying on the general mergeConflictError or a more specific error code
+    // from firebaseAuthError if Firebase provides one for merges.
+    // If a specific "merge is required" signal is needed beyond a generic error string,
+    // a new Sendable case without the credential could be added, e.g., .mergeResolutionRequired(email: String).
+    // For now, mergeConflictError(String) will be used.
+
     case missingLinkingInfo
-    case providerSpecificError(provider: String, underlyingError: FirebaseErrorData?) // For errors from GoogleSignIn, AppleSignIn etc.
+    case providerSpecificError(provider: String, underlyingError: FirebaseErrorData?)
     case reauthenticationRequired(providerId: String?)
 
 
@@ -40,20 +54,19 @@ public enum AuthError: Error, Equatable, Sendable {
         case (.biometricsFailed(let lCode), .biometricsFailed(let rCode)): return lCode == rCode
         case (.firebaseAuthError(let lData), .firebaseAuthError(let rData)): return lData == rData
         case (.accountLinkingError(let lMsg), .accountLinkingError(let rMsg)): return lMsg == rMsg
-        case (.mergeConflictError(let lMsg), .mergeConflictError(let rMsg)): return lMsg == rMsg
-        case (.accountLinkingRequired(let lEmail, let lCred), .accountLinkingRequired(let rEmail, let rCred)):
-            // AuthCredential doesn't conform to Equatable by default, so we can't directly compare them.
-            // For now, compare based on email. If more specific comparison for credential is needed,
-            // we'd need to compare properties of AuthCredential if possible, or rely on context.
-            // Often, the presence of a credential vs nil is enough for logic.
-            return lEmail == rEmail && (lCred == nil && rCred == nil || lCred != nil && rCred != nil)
-        case (.mergeConflictRequired(_), .mergeConflictRequired(_)):
-            // Similar to above, AuthCredential comparison is tricky.
-            // For now, consider them equal if both are mergeConflictRequired.
-            return true // Or compare provider IDs if useful: lCred.provider == rCred.provider
+        case (.mergeConflictError(let lMsg), .mergeConflictError(let rMsg)): return lMsg == rMsg // Handles the modified mergeConflictError
+
+            // MODIFIED: Equatable for accountLinkingRequired
+        case (.accountLinkingRequired(let lEmail, let lAttemptedId), .accountLinkingRequired(let rEmail, let rAttemptedId)):
+            return lEmail == rEmail && lAttemptedId == rAttemptedId
+
+            // Case for mergeConflictRequired(AuthCredential) is removed.
+
         case (.missingLinkingInfo, .missingLinkingInfo): return true
         case (.providerSpecificError(let lProv, let lErr), .providerSpecificError(let rProv, let rErr)):
             return lProv == rProv && lErr == rErr
+        case (.reauthenticationRequired(let lId), .reauthenticationRequired(let rId)):
+            return lId == rId
         default: return false
         }
     }
@@ -74,8 +87,11 @@ public enum AuthError: Error, Equatable, Sendable {
                 case AuthErrorCode.userNotFound.rawValue:
                     return "No account found with this email address."
                 case AuthErrorCode.emailAlreadyInUse.rawValue:
+                    // This message might be less direct if we are guiding to link.
+                    // The .accountLinkingRequired error will have a more specific message.
                     return "This email address is already in use by another account."
                 case AuthErrorCode.credentialAlreadyInUse.rawValue:
+                    // This could lead to mergeConflictError
                     return "This sign-in method is already linked to an account, possibly a different one."
                 case AuthErrorCode.networkError.rawValue:
                     return "A network error occurred. Please check your connection and try again."
@@ -87,11 +103,23 @@ public enum AuthError: Error, Equatable, Sendable {
             }
             return "Authentication error: \(d.message) (Code: \(d.code))"
         case .accountLinkingError(let m): return "Account Linking Error: \(m)"
+
+            // MODIFIED: Uses the string directly
         case .mergeConflictError(let m): return "Account Merge Conflict: \(m)"
-        case .accountLinkingRequired(let email, _):
-            return "An account already exists for \(email). Please sign in with your existing method to link."
-        case .mergeConflictRequired:
-            return "An account conflict occurred. Please resolve to continue."
+
+            // MODIFIED: Localized description for accountLinkingRequired
+        case .accountLinkingRequired(let email, let attemptedProviderId):
+            var message = "An account already exists for \(email)."
+            if let provider = attemptedProviderId {
+                let providerName = provider == "password" ? "Email/Password" : provider.capitalized
+                message += " You attempted to sign in or sign up using \(providerName)."
+            }
+            message += " Please sign in with your existing method to link this account."
+            return message
+
+
+            // Localized description for mergeConflictRequired(AuthCredential) removed.
+
         case .missingLinkingInfo: return "Internal Error: Missing information required for account linking."
         case .providerSpecificError(let provider, let underlyingError):
             let baseMessage = "\(provider) sign-in failed."
@@ -110,7 +138,6 @@ public enum AuthError: Error, Equatable, Sendable {
     }
 
     static func makeBiometricsFailedError(_ error: Error?) -> AuthError {
-        // We don't need the specific LAError.Code for the public message.
         return .biometricsFailed(nil)
     }
 

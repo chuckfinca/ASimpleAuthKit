@@ -206,12 +206,13 @@ final class AuthServiceTests: XCTestCase {
         // if its provider returns .accountLinkingRequired with a nil credential.
         // Or, if it directly returns the error code for emailAlreadyInUse, FirebaseAuthenticator
         // should convert it.
-        let emailInUseError = AuthError.accountLinkingRequired(email: existingEmail, pendingCredential: nil)
+        let emailInUseError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: "password")
 
         mockFirebaseAuthenticator.createAccountWithEmailResultProvider = { email, _, _ in
             XCTAssertEqual(email, existingEmail)
-            // Simulate that the authenticator itself determined linking is required
-            // This implies the authenticator internally caught emailAlreadyInUse and converted it
+            // Simulate that FirebaseAuthenticator returns the new AuthError type
+            // Also, simulate that FirebaseAuthenticator has set its internal pendingCredentialForLinking to nil
+            self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(nil) // Explicitly ensure mock state
             return .failure(emailInUseError)
         }
 
@@ -224,11 +225,10 @@ final class AuthServiceTests: XCTestCase {
 
         await sut.createAccountWithEmail(email: existingEmail, password: "anypassword", displayName: nil)
 
-        if case .requiresAccountLinking(let email, let providers) = sut.state {
+        if case .requiresAccountLinking(let email, let provider) = sut.state {
             XCTAssertEqual(email, existingEmail)
-            // Based on current AuthService implementation, providers list is always empty here.
-            XCTAssertTrue(providers.isEmpty, "Expected providers list to be empty based on current AuthService implementation.")
-            print("Providers in state for .requiresAccountLinking: \(providers)")
+            XCTAssertEqual(provider, "password", "Expected attempted provider to be 'password'.")
+            print("Provider in state for .requiresAccountLinking: \(provider ?? "NA")")
         } else {
             XCTFail("Expected .requiresAccountLinking state, got \(sut.state)")
         }
@@ -282,27 +282,35 @@ final class AuthServiceTests: XCTestCase {
     // MARK: - Account Linking Flow Test (Example: Apple sign-in, account exists with Email)
     func testLinkingFlow_AppleSignIn_AccountExistsWithEmail_ReauthWithEmail_LinksApple() async throws {
         let existingEmail = "linktest@example.com"
-        // Ensure this user and password can actually sign into your emulator if not already existing
-        // You might need to create this user in the emulator manually or via a setup script for the test run.
-        // For this test, let's assume "correctpassword" is valid for "linktest@example.com" in the emulator.
-        let originalUser = createDummyUser(uid: "originalEmailUserUidToActuallySignIn", email: existingEmail, providerID: "password")
-        let appleCredential = createPlaceholderAuthCredential(providerID: "apple.com")
+        let actualAppleCredential = createPlaceholderAuthCredential(providerID: "apple.com")
+        let appleProviderIdString = actualAppleCredential.provider
+        let appleCredentialProviderId = createPlaceholderAuthCredential(providerID: "apple.com")
 
         // 1. Initial Apple Sign-In attempt fails with accountLinkingRequired
-        let linkingError = AuthError.accountLinkingRequired(email: existingEmail, pendingCredential: appleCredential)
-        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in .failure(linkingError) }
+        let linkingError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: appleCredentialProviderId.provider)
+        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in
+            print("TEST signInWithAppleResultProvider: Current mock pending = \(self.mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil") BEFORE force")
+            self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(actualAppleCredential)
+            print("TEST signInWithAppleResultProvider: Current mock pending = \(self.mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil") AFTER force")
+            return .failure(linkingError)
+        }
 
         print("Test Step 1: Initial Apple Sign-In attempt...")
+//        await sut.signInWithApple(presentingViewController: dummyVC)
+        print("TEST: Just before calling sut.signInWithApple. Mock's pending = \(mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil")")
         await sut.signInWithApple(presentingViewController: dummyVC)
+        print("TEST: Just after calling sut.signInWithApple. Mock's pending = \(mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil")")
+        print("TEST: Just after calling sut.signInWithApple. SUT's pending = \(sut.pendingCredentialToLinkAfterReauth?.provider ?? "nil")")
 
-        guard case .requiresAccountLinking(let email, let providers) = sut.state else {
+
+        guard case .requiresAccountLinking(let email, _) = sut.state else {
             XCTFail("Expected .requiresAccountLinking state, got \(sut.state). Error: \(String(describing: sut.lastError))")
             return
         }
         XCTAssertEqual(email, existingEmail)
         XCTAssertEqual(sut.lastError, linkingError)
-        XCTAssertNotNil(sut.pendingCredentialToLinkAfterReauth, "SUT should have stored the pending Apple credential")
-        XCTAssertEqual(sut.pendingCredentialToLinkAfterReauth?.provider, appleCredential.provider)
+        XCTAssertNotNil(sut.pendingCredentialToLinkAfterReauth?.provider, "SUT should have stored the pending Apple credential")
+        XCTAssertEqual(sut.pendingCredentialToLinkAfterReauth?.provider, appleCredentialProviderId.provider)
         let initialAppleCallCount = mockFirebaseAuthenticator.signInWithAppleCallCount
         let initialEmailCallCount = mockFirebaseAuthenticator.signInWithEmailCallCount
         let initialLinkCallCount = mockFirebaseAuthenticator.linkCredentialCallCount
@@ -329,10 +337,10 @@ final class AuthServiceTests: XCTestCase {
         // --- END CRITICAL INTEGRATION STEP ---
 
         // Mock the linking call itself
-        let linkedProviderId = appleCredential.provider // The provider of the credential being linked
+        let linkedProviderId = appleCredentialProviderId.provider // The provider of the credential being linked
         mockFirebaseAuthenticator.linkCredentialResultProvider = { credToLink, fbUserToLinkTo in
             XCTAssertEqual(fbUserToLinkTo.uid, firebaseUserForLinking!.uid) // Ensure linking to the correct Firebase User
-            XCTAssertEqual(credToLink.provider, appleCredential.provider)
+            XCTAssertEqual(credToLink.provider, appleCredentialProviderId.provider)
             // Simulate linking success by returning a user that reflects the linked state
             // The UID remains the same. The providerID in AuthUser might reflect the newly linked one or primary.
             return .success(createDummyUser(uid: firebaseUserForLinking!.uid, email: existingEmail, providerID: linkedProviderId))

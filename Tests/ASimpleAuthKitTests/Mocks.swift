@@ -128,7 +128,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     //     self.secureStorage = secureStorage
     // }
     // Simplified init if config/storage not directly used by mock logic
-    init() {}
+    init() { }
 
 
     // --- Protocol Methods Implementation ---
@@ -208,28 +208,28 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         return try processMockResult(result, isLinking: true) // Pass isLinking context
     }
     
+    func forcePendingCredentialForLinking(_ cred: AuthCredential?) {
+        self.pendingCredentialForLinking = cred
+        print("MockFirebaseAuthenticator: Forced pendingCredentialForLinking.")
+    }
+
     private func processMockResult(_ result: Result<AuthUser, AuthError>, isLinking: Bool = false) throws -> AuthUser {
         switch result {
         case .success(let user):
-            // If this success is for an initial sign-in (not linking re-auth),
-            // and there was a pending credential, it implies the re-auth was for linking.
-            // However, the mock's job is simpler: just return the user.
-            // AuthService handles the logic of "was there a pending credential?"
             print("MockFirebaseAuthenticator: Result is success for user \(user.uid)")
-            if !isLinking { // Only clear if it's not part of the linkCredential call itself
-                self.pendingCredentialForLinking = nil // Successful sign-in clears any prior pending state
+            if !isLinking {
+                // If this was a successful sign-in (not a link operation itself),
+                // and it wasn't a re-auth for linking, clear any mock pending credential.
+                // AuthService handles its own pendingCredentialToLinkAfterReauth.
+                // This mock's pendingCredentialForLinking is mainly for simulating what
+                // a real FirebaseAuthenticator would store *before* throwing an accountLinkingRequired error.
             }
             return user
         case .failure(let error):
             print("MockFirebaseAuthenticator: Result is failure: \(error.localizedDescription)")
-            // Simulate FirebaseAuthenticator's behavior of populating pendingCredentialForLinking
-            // if the error indicates account linking is required.
-            if case .accountLinkingRequired(_, let cred) = error {
-                print("MockFirebaseAuthenticator: Simulating storage of pending credential due to .accountLinkingRequired error.")
-                self.pendingCredentialForLinking = cred
-            } else if !isLinking { // Don't clear if the linkCredential call itself failed
-                self.pendingCredentialForLinking = nil // Other errors clear it
-            }
+            // The mock no longer needs to manipulate its pendingCredentialForLinking based on the error type here.
+            // It's set by forcePendingCredentialForLinking or when its *own* methods (like signInWithAppleResultProvider)
+            // are configured to simulate the storing of a credential before throwing the error.
             throw error
         }
     }

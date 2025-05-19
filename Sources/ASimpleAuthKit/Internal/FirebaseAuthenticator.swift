@@ -302,46 +302,36 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         if nsError.domain == AuthErrorDomain {
             switch nsError.code {
             case AuthErrorCode.accountExistsWithDifferentCredential.rawValue:
-                // This means the user tried to SIGN IN (e.g. with Google) but the email
-                // is already associated with an existing Firebase user (e.g. via Apple).
-                // The `attemptedCredential` is the one they just tried (Google in this example).
-                // The `nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey]` might also contain this.
-                // The `nsError.userInfo[AuthErrorUserInfoEmailKey]` contains the conflicting email.
                 let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
-                let newCredential = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
+                // IMPORTANT: Get the credential Firebase wants you to link.
+                let credentialToStoreForLinking = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
 
-                if let cred = newCredential {
-                    self.pendingCredentialForLinking = cred // Store it for AuthService to use
+                if let cred = credentialToStoreForLinking {
+                    self.pendingCredentialForLinking = cred // Store the actual credential internally
                     print("FirebaseAuthenticator: Stored pending credential for linking. Provider: \(cred.provider)")
-                    return .accountLinkingRequired(email: conflictingEmail, pendingCredential: cred)
+                    // Return an AuthError with Sendable information only
+                    return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: "password")
                 } else {
                     print("FirebaseAuthenticator: Error - accountExistsWithDifferentCredential but no credential found in error/attempt.")
-                    return .missingLinkingInfo // Should not happen if `attemptedCredential` was passed
+                    // This situation suggests something is wrong, perhaps the attemptedCredential was nil.
+                    return .missingLinkingInfo
                 }
 
             case AuthErrorCode.emailAlreadyInUse.rawValue:
-                // This means the user tried to CREATE an Email/Password account, but the email
-                // is already in use (could be by any provider, including another Email/Password).
                 let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
-                print("FirebaseAuthenticator: Email \(conflictingEmail) already in use. Suggesting linking.")
-                // No `pendingCredential` here because we don't have the password they typed to form one.
-                // AuthService will guide them to sign in with an existing method.
-                self.pendingCredentialForLinking = nil // Ensure it's nil
-                return .accountLinkingRequired(email: conflictingEmail, pendingCredential: nil)
+                print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (likely from create user). Suggesting linking.")
+                self.pendingCredentialForLinking = nil // No specific credential to link from a failed create user.
+                // Return an AuthError with Sendable information, indicating "password" was attempted for creation.
+                return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: attemptedCredential?.provider)
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
-                // This error is nuanced. It can happen if:
-                // 1. You try to LINK a credential (e.g. Google) to User A, but that Google account
-                //    is ALREADY linked to a *different* Firebase User B. This is a hard stop/merge scenario.
-                // 2. Sometimes, it might appear if you try to sign-in with a credential that is already
-                //    linked to the *current* user, but this is less common and usually a success.
-                print("FirebaseAuthenticator: Credential already in use by another account.")
-                // This is a tricky one. For now, map it to a generic firebaseAuthError.
-                // AuthService might need more sophisticated logic if it wants to handle potential merges.
-                // For now, the linking will fail, and this error will be shown.
-                // A more advanced system might try to detect if this implies a merge is possible.
-                return AuthError.firebaseAuthError(FirebaseErrorData(code: nsError.code, domain: nsError.domain, message: "This sign-in method is already associated with a different user account."))
-
+                print("FirebaseAuthenticator: Credential already in use by another account. This could be a merge conflict.")
+                // This error typically means the credential (e.g., Google token) you tried to LINK
+                // to the current user is already associated with a DIFFERENT Firebase user.
+                // For simplicity, map to a specific mergeConflictError string.
+                // AuthService can then decide to put UI into .requiresMergeConflictResolution or similar.
+                let message = "This sign-in method is already associated with a different user account. Please sign in with that account if you wish to merge, or contact support."
+                return .mergeConflictError(message) // Using the simplified mergeConflictError
 
             default:
                 return AuthError.makeFirebaseAuthError(error)
