@@ -112,6 +112,14 @@ public enum AuthError: Error, Equatable, Sendable {
     }
 
     static func makeBiometricsFailedError(_ error: Error?) -> AuthError {
+        guard let error = error else {
+            return .biometricsFailed(nil)
+        }
+        
+        if let laError = error as? LAError {
+            return .biometricsFailed(laError.code)
+        }
+        
         return .biometricsFailed(nil)
     }
 
