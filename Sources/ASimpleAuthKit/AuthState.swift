@@ -36,7 +36,7 @@ public enum AuthState: Equatable, Sendable {
     case authenticating(String?)
     case requiresBiometrics
     case signedIn(AuthUser)
-    case requiresAccountLinking(email: String, existingProviders: [String])
+    case requiresAccountLinking(email: String, attemptedProviderId: String?)
     case requiresMergeConflictResolution
 
     public static func == (lhs: AuthState, rhs: AuthState) -> Bool {
@@ -45,8 +45,8 @@ public enum AuthState: Equatable, Sendable {
         case (.authenticating(let lMsg), .authenticating(let rMsg)): return lMsg == rMsg
         case (.requiresBiometrics, .requiresBiometrics): return true
         case (.signedIn(let lUser), .signedIn(let rUser)): return lUser.uid == rUser.uid
-        case (.requiresAccountLinking(let lEmail, let lProviders), .requiresAccountLinking(let rEmail, let rProviders)):
-            return lEmail == rEmail && lProviders.sorted() == rProviders.sorted()
+        case (.requiresAccountLinking(let lEmail, let lProvider), .requiresAccountLinking(let rEmail, let rProvider)):
+            return lEmail == rEmail && lProvider == rProvider
         case (.requiresMergeConflictResolution, .requiresMergeConflictResolution):
             return true
         default: return false

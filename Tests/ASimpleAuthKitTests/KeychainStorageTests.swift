@@ -95,7 +95,6 @@ class KeychainStorageTests: XCTestCase {
         let initialUserID = "initialUser"
         let newUserID = "newUser"
         try await sut.saveLastUserID(initialUserID)
-        // <<< FIXED: Await before assert >>>
         let preOverwriteID = await sut.getLastUserID()
         XCTAssertEqual(preOverwriteID, initialUserID, "Precondition: Initial user should be saved")
         sut.saveUserIDCallCount = 0

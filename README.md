@@ -1,28 +1,32 @@
-# ASimpleAuthKit
+# ASimpleAuthKit: Streamlined Direct Firebase Authentication for SwiftUI
 
-[![Swift Version](https://img.shields.io/badge/Swift-5.8+-orange.svg)]()
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%2016.0+-blue.svg)]()
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-<!-- Add other badges like build status, version -->
+![alt text](https://img.shields.io/badge/Swift-5.8+-orange.svg)
+![alt text](https://img.shields.io/badge/Platforms-iOS%2016.0+-blue.svg)
+![alt text](https://img.shields.io/badge/License-MIT-blue.svg)
 
-A simple Swift package to streamline Firebase Authentication integration (using FirebaseUI) in SwiftUI applications, handling common flows like sign-in, sign-out, state management, account linking, merge conflicts, biometrics, and secure keychain storage.
+A simple Swift package to streamline direct Firebase Authentication SDK integration in SwiftUI applications, handling common flows like sign-in with various providers (Email, Google, Apple), sign-out, state management, account linking, biometrics, and secure keychain storage.
 
 ## Features
 
-*   **FirebaseUI Integration:** Leverages `FirebaseAuthUI` for easy setup of common authentication providers (Email, Google, Apple, etc.).
-*   **SwiftUI Friendly:** Provides an `@MainActor` `ObservableObject` (`AuthService`) that publishes the authentication state (`AuthState`) for easy use in SwiftUI views.
-*   **State Management:** Defines clear states (`signedOut`, `authenticating`, `signedIn`, `requiresBiometrics`, `requiresAccountLinking`, `requiresMergeConflictResolution`).
-*   **Account Linking & Merge Conflicts:** Handles the Firebase flows for linking accounts with the same email address and resolving merge conflicts.
+*   **Direct Firebase SDK Integration:** Uses `FirebaseAuth` directly for fine-grained control over authentication flows.
+*   **Provider-Specific Logins:** Supports Email/Password, Google Sign-In (via GoogleSignIn SDK), and Sign in with Apple.
+*   **Customizable UI:** Designed to work with your application's custom login and registration UI.
+*   **SwiftUI Friendly:** Provides an `@MainActor ObservableObject` (`AuthService`) that publishes the authentication state (`AuthState`) for easy use in SwiftUI views.
+*   **State Management:** Defines clear states (`.signedOut`, `.authenticating`, `.signedIn`, `.requiresBiometrics`, `.requiresAccountLinking`, `.requiresMergeConflictResolution`).
+*   **Account Linking:** Handles the Firebase flows for linking accounts with the same email address when a user signs in with a new provider for an existing email.
 *   **Biometric Authentication:** Optional support for authenticating returning users with Face ID / Touch ID (`.requiresBiometrics` state).
 *   **Secure Keychain Storage:** Automatically stores the last signed-in user ID securely in the keychain to enable the biometric flow. Supports Keychain Access Groups for sharing credentials between apps.
 *   **Error Handling:** Provides a specific `AuthError` enum for handling various authentication failures.
-*   **Configurable:** Uses an `AuthConfig` struct to customize providers, URLs, keychain behavior, and Apple Sign-In persistence.
+*   **Configurable:** Uses an `AuthConfig` struct to customize URLs, keychain behavior, and Apple Sign-In persistence.
 
 ## Requirements
 
 *   iOS 16.0+
 *   Xcode 15.0+ (or as required by the Swift version)
-*   Swift 5.9+
+*   Swift 5.8+ (or as per package definition)
+*   Firebase SDK (`FirebaseAuth` - handled by this package)
+*   GoogleSignIn SDK (handled by this package if Google Sign-In is used by the app)
+*   Consuming app needs to configure its Firebase project and necessary platform settings (e.g., URL schemes for Google Sign-In, "Sign in with Apple" capability).
 
 ## Installation
 
@@ -31,11 +35,12 @@ Use the Swift Package Manager. Add the following dependency to your `Package.swi
 ```swift
 // In Package.swift dependencies:
 dependencies: [
-    .package(url: "https://github.com/chuckfinca/ASimpleAuthKit.git", from: "0.1.0") // Replace with your URL and desired version
+    // Replace with your actual repository URL and desired version/branch
+    .package(url: "https://github.com/YOUR_USERNAME/ASimpleAuthKit.git", from: "1.0.0")
 ]
 ```
 
-Then, add `ASimpleAuthKit` as a dependency to your app target:
+Then, add ASimpleAuthKit as a dependency to your app target:
 
 ```swift
 // In Package.swift targets:
@@ -43,7 +48,7 @@ targets: [
     .target(
         name: "YourAppTarget",
         dependencies: [
-            .product(name: "ASimpleAuthKit", package: "ASimpleAuthKit")
+            .product(name: "ASimpleAuthKit", package: "ASimpleAuthKit") // Or your package name if different
         ]
     )
 ]
@@ -51,272 +56,368 @@ targets: [
 
 ## Firebase Setup (For App Consumers)
 
-**ASimpleAuthKit assumes that *your application* handles the initial Firebase setup.**
+ASimpleAuthKit assumes that your application handles the initial Firebase project setup and SDK configuration.
 
-1.  **Firebase Project:** You need a Firebase project set up for your application.
-2.  **Add App to Project:** Add your iOS app to the Firebase project in the Firebase console.
-3.  **Download `GoogleService-Info.plist`:** Download the configuration file from your Firebase project settings.
-4.  **Add Plist to App Target:** Add the downloaded `GoogleService-Info.plist` file to your main application target in Xcode. **Ensure it's included in the target's "Copy Bundle Resources" build phase.**
-5.  **Configure Firebase:** In your application's entry point (`AppDelegate` or SwiftUI `App` struct initializer), call `FirebaseApp.configure()` **before** initializing or using `AuthService` from this package.
+1. **Firebase Project:** Create a Firebase project if you haven't already.
+2. **Add App to Project:** Add your iOS app to the Firebase project.
+3. **Enable Sign-In Providers:** In the Firebase console (Authentication -> Sign-in method), enable the providers you intend to use (Email/Password, Google, Apple).
+4. **Download GoogleService-Info.plist:** Download this configuration file from your Firebase project settings.
+5. **Add Plist to App Target:** Add the downloaded GoogleService-Info.plist file to your main application target in Xcode. Ensure it's included in the target's "Copy Bundle Resources" build phase.
+6. **Configure Firebase in App:** In your AppDelegate or SwiftUI App struct, call FirebaseApp.configure() before initializing AuthService.
 
-    *   **AppDelegate:**
-        ```swift
-        import UIKit
-        import FirebaseCore // Import FirebaseCore
+```swift
+// AppDelegate.swift
+import UIKit
+import FirebaseCore
 
-        @main
-        class AppDelegate: UIResponder, UIApplicationDelegate {
-            func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-                FirebaseApp.configure() // Configure Firebase
-                return true
-            }
-            // ... other app delegate methods
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        FirebaseApp.configure()
+        return true
+    }
+    // ...
+}
+```
+
+Or in a SwiftUI App:
+
+```swift
+// YourApp.swift
+import SwiftUI
+import FirebaseCore
+
+@main
+struct YourApp: App {
+    init() {
+        FirebaseApp.configure()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
         }
-        ```
-    *   **SwiftUI App:**
-        ```swift
-        import SwiftUI
-        import FirebaseCore // Import FirebaseCore
+    }
+}
+```
 
-        @main
-        struct YourApp: App {
-            // Register app delegate for Firebase setup
-            @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+### URL Schemes (Google Sign-In):
 
-            var body: some Scene {
-                WindowGroup {
-                    ContentView()
+If using Google Sign-In, you need to add a URL Scheme to your app:
+1. Open your Info.plist.
+2. Locate the REVERSED_CLIENT_ID value in your GoogleService-Info.plist.
+3. In your app's Info.plist, add a new URL type, and paste the REVERSED_CLIENT_ID into the URL Schemes field.
+4. Ensure your AppDelegate or SwiftUI App handles the Google Sign-In URL callback:
+
+```swift
+// AppDelegate.swift
+import GoogleSignIn
+
+func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+    var handled: Bool
+    handled = GIDSignIn.sharedInstance.handle(url)
+    if handled {
+        return true
+    }
+    // Handle other custom URL types if needed
+    return false
+}
+```
+
+For SwiftUI App lifecycle:
+
+```swift
+// YourApp.swift
+import SwiftUI
+import GoogleSignIn
+
+@main
+struct YourApp: App {
+    // ... (FirebaseApp.configure() in init) ...
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .onOpenURL { url in
+                    GIDSignIn.sharedInstance.handle(url)
                 }
-            }
         }
+    }
+}
+```
 
-        // Separate AppDelegate class for configuration
-        class AppDelegate: NSObject, UIApplicationDelegate {
-          func application(_ application: UIApplication,
-                           didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-            FirebaseApp.configure()
-            return true
-          }
-        }
-        ```
-        *(Using the AppDelegate approach is often the most reliable way for Firebase configuration with SwiftUI)*
+### Sign in with Apple Capability:
 
-6.  **Configure URL Schemes (If needed):** If using providers like Google Sign-In, follow the Firebase documentation to configure the necessary URL Schemes in your app's `Info.plist`.
+In Xcode, select your app target, go to the "Signing & Capabilities" tab, and click the "+" button to add the "Sign in with Apple" capability.
 
 ## Basic Usage
+
+Here's how you might use ASimpleAuthKit in a SwiftUI view:
 
 ```swift
 import SwiftUI
 import ASimpleAuthKit
-import FirebaseAuthUI // Required for Auth Providers
-import FirebaseCore   // Required for getting clientID if using Google
 
-struct ContentView: View {
-    // Create and observe the AuthService instance
-    @StateObject var authService: AuthService
+struct YourAuthenticationScreen: View {
+    @StateObject var authService: AuthService // Can be @EnvironmentObject if provided higher up
+    @State private var email = ""
+    @State private var password = ""
+    @State private var displayName = "" // For sign-up
 
-    init() {
-        // 1. Configure Auth Providers (Replace with your desired providers)
-        // Ensure FirebaseApp.configure() has run before accessing options
-        let googleClientID = FirebaseApp.app()?.options.clientID
-
-        var providers: [FUIAuthProvider] = [
-            FUIEmailAuth(),
-            // Add Google only if clientID is available
-            // FUIGoogleAuth(clientID: googleClientID ?? ""), // Enable if using Google
-            FUIOAuth.appleAuthProvider()
-        ]
-
-        // Example: Safely add Google Provider only if ClientID exists
-        if let clientID = googleClientID, !clientID.isEmpty {
-             providers.append(FUIGoogleAuth(clientID: clientID))
-        } else {
-            print("Warning: Firebase Client ID not found. Google Sign-In disabled.")
-            // Handle the case where Google Sign-In cannot be enabled
-        }
-
-
-        // 2. Create AuthConfig
-        let authConfig = AuthConfig(
-            providers: providers,
-            tosURL: URL(string: "https://your-terms-of-service.com"),       // Optional
-            privacyPolicyURL: URL(string: "https://your-privacy-policy.com") // Optional
-            // keychainAccessGroup: "YOUR_APP_GROUP_ID" // Optional: If sharing keychain
-        )
-
-        // 3. Initialize AuthService (FirebaseApp.configure() must have been called already)
-        _authService = StateObject(wrappedValue: AuthService(config: authConfig))
-    }
-
-    // Helper to get the presenting view controller
-    // You might use UIViewControllerRepresentable or other methods in a real app.
-    // The included RootViewControllerFinder.swift has helpers for this.
+    // Helper to find the top-most view controller for presenting OS-level UIs (like Apple Sign-In)
+    @MainActor
     private func getPresentingViewController() -> UIViewController? {
-        return findTopMostViewController() // Using helper from RootViewControllerFinder
+        // This relies on RootViewControllerFinder.swift being included in ASimpleAuthKit.
+        // Ensure you have access to findTopMostViewController()
+        return findTopMostViewController()
     }
 
+    // If authService is not provided by @EnvironmentObject, initialize it:
+    // init() {
+    //     let authConfig = AuthConfig(
+    //         tosURL: URL(string: "https://your-app.com/terms"),
+    //         privacyPolicyURL: URL(string: "https://your-app.com/privacy")
+    //         // keychainAccessGroup: "YOUR_TEAM_ID.com.your-bundle-prefix" // Optional for keychain sharing
+    //     )
+    //     _authService = StateObject(wrappedValue: AuthService(config: authConfig))
+    // }
+    
     var body: some View {
-        VStack {
-            switch authService.state {
-            case .signedOut:
-                Text("You are signed out.")
-                Button("Sign In / Sign Up") {
-                    Task {
-                        if let presentingVC = getPresentingViewController() {
-                            await authService.signIn(from: presentingVC)
-                        } else {
-                            print("Error: Could not find presenting view controller.")
-                            // Handle error appropriately (e.g., show alert)
+        NavigationView {
+            VStack(spacing: 15) {
+                switch authService.state {
+                case .signedOut, .authenticating("") where authService.lastError == nil: // Treat initial empty authenticating message like signed out
+                    Text("Welcome").font(.largeTitle)
+                    
+                    TextField("Email", text: $email)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Button("Sign In with Email") {
+                        Task { await authService.signInWithEmail(email: email, password: password) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    // TextField("Display Name (Optional)", text: $displayName).textFieldStyle(.roundedBorder) // For sign up
+                    Button("Create Email Account") {
+                        Task { await authService.createAccountWithEmail(email: email, password: password, displayName: displayName.isEmpty ? nil : displayName) }
+                    }
+                    
+                    Divider()
+                    
+                    Button("Sign In with Google") {
+                        Task {
+                            guard let vc = getPresentingViewController() else {
+                                print("Error: Could not find presenting VC for Google Sign-In.")
+                                // Show an error to the user (e.g., update a @State var for an alert)
+                                return
+                            }
+                            await authService.signInWithGoogle(presentingViewController: vc)
                         }
                     }
-                }
-            case .authenticating(let message):
-                ProgressView(message ?? "Authenticating...")
-            case .signedIn(let user):
-                Text("Welcome, \(user.displayName ?? user.email ?? user.uid)!")
-                Text("Provider: \(user.providerID ?? "N/A")")
-                Button("Sign Out") {
-                    authService.signOut()
-                }
-            case .requiresBiometrics:
-                Text("Please authenticate with Biometrics.")
-                // Access underlying BiometricAuthenticator properties safely if needed
-                let biometryType = (authService as? AuthService)?.biometricAuthenticator.biometryTypeString ?? "Biometrics"
-                Button("Use \(biometryType)") {
-                    Task {
-                        await authService.authenticateWithBiometrics() // Use default reason
-                        // Or: await authService.authenticateWithBiometrics(reason: "Custom reason")
-                    }
-                }
-                 Button("Sign In With Password Instead") { // Allow fallback
-                    Task {
-                        if let presentingVC = getPresentingViewController() {
-                           await authService.signIn(from: presentingVC)
+                    
+                    Button("Sign In with Apple") {
+                        Task {
+                            guard let vc = getPresentingViewController() else {
+                                print("Error: Could not find presenting VC for Apple Sign-In.")
+                                // Show an error to the user
+                                return
+                            }
+                            await authService.signInWithApple(presentingViewController: vc)
                         }
                     }
-                 }
-            case .requiresAccountLinking(let email, let providers):
-                VStack {
-                    Text("An account already exists with \(email).")
-                        .padding(.bottom, 5)
-                    Text("Sign in with one of your existing providers to link accounts:")
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                    Text(providers.joined(separator: ", "))
-                        .font(.caption)
-                        .bold()
-                        .padding(.bottom)
-                     Button("Continue Sign In to Link") { // Re-present UI to link
-                         Task {
-                             if let presentingVC = getPresentingViewController() {
-                                await authService.signIn(from: presentingVC)
-                             }
-                         }
-                     }
-                     Button("Cancel") {
-                         authService.cancelPendingAction()
-                     }
-                }
-            case .requiresMergeConflictResolution:
-                 VStack {
-                     Text("Account Conflict")
-                         .font(.headline)
-                         .padding(.bottom)
-                     Text("You previously signed in with a different method. Do you want to merge these accounts?")
-                         .multilineTextAlignment(.center)
-                         .padding(.bottom)
-                     Button("Merge Accounts") {
-                         Task {
-                             await authService.proceedWithMergeConflictResolution()
-                         }
-                     }
-                     Button("Cancel") {
-                         authService.cancelPendingAction()
-                     }
-                 }
-            }
-
-            // Display Last Error (Optional)
-            if let error = authService.lastError {
-                Text("Error: \(error.localizedDescription)")
-                    .foregroundColor(.red)
-                    .padding(.top)
+                    
+                    Button("Forgot Password?") {
+                        Task { await authService.sendPasswordResetEmail(to: email) }
+                        // UI should show a message like "Password reset email sent if account exists."
+                    }
                     .font(.caption)
+                
+                case .authenticating(let message):
+                    ProgressView(message ?? "Processing...")
+                
+                case .signedIn(let user):
+                    VStack {
+                        Text("Welcome, \(user.displayName ?? user.email ?? user.uid)!")
+                        Text("Provider: \(user.providerID ?? "N/A")")
+                        Button("Sign Out") { authService.signOut() }
+                    }
+                
+                case .requiresBiometrics:
+                    VStack {
+                        Text("Please authenticate using \(authService.biometryTypeString) to continue.")
+                        Button("Use \(authService.biometryTypeString)") {
+                            Task { await authService.authenticateWithBiometrics() }
+                        }
+                        Button("Sign In With Different Method") {
+                            authService.cancelPendingAction() // This will revert to .signedOut
+                        }
+                    }
+                
+                case .requiresAccountLinking(let linkEmail, let existingProviders):
+                    VStack(alignment: .center, spacing: 10) {
+                        Text("Account Exists for \(linkEmail)")
+                            .font(.headline)
+                        if !existingProviders.isEmpty {
+                            Text("You previously signed in with: \(existingProviders.map(readableProviderName).joined(separator: ", ")).")
+                                .font(.footnote)
+                        }
+                        Text("Please sign in with one of your existing methods to link this new way of signing in.")
+                            .font(.callout)
+                            .multilineTextAlignment(.center)
+                        
+                        // Re-present sign-in options. Example for Google:
+                        if existingProviders.contains("google.com") || existingProviders.isEmpty { // Smart display
+                            Button("Sign In with Google to Link") {
+                                Task {
+                                    if let vc = getPresentingViewController() {
+                                        await authService.signInWithGoogle(presentingViewController: vc)
+                                    }
+                                }
+                            }
+                        }
+                        // Add other relevant provider buttons (Apple, Email Sign-In for linking)
+
+                        Button("Cancel Linking") {
+                            authService.cancelPendingAction()
+                        }
+                        .padding(.top)
+                    }
+                    .padding()
+                
+                case .requiresMergeConflictResolution:
+                    VStack {
+                        Text("Account Conflict")
+                            .font(.headline)
+                        Text("There's an issue with linking accounts. Please try signing in with your primary method or contact support.")
+                        Button("Cancel") { authService.cancelPendingAction() }
+                    }
+                }
+                
+                // Display lastError if it's present and not during an active authentication attempt
+                if let error = authService.lastError, !authService.state.isAuthenticating {
+                    Text("Error: \(error.localizedDescription)")
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding(.top)
+                }
             }
+            .padding()
+            .navigationTitle("Sign In / Sign Up")
         }
-        .padding()
+        // Example of providing authService to child views
+        // .environmentObject(authService)
+        .onDisappear {
+            // If this YourAuthenticationScreen is the primary owner of authService,
+            // and it's being permanently dismissed (not just covered by another sheet),
+            // then invalidate. Otherwise, invalidate at a higher level (e.g., AppState deinit).
+            // authService.invalidate()
+        }
+    }
+    
+    func readableProviderName(providerID: String) -> String {
+        switch providerID {
+        case "password": return "Email/Password"
+        case "google.com": return "Google"
+        case "apple.com": return "Apple"
+        default: return providerID.capitalized
+        }
     }
 }
 ```
 
 ## Lifecycle Management
 
-It is crucial to manage the lifecycle of the `AuthService` instance, especially regarding its internal Firebase listener.
+It is crucial to manage the lifecycle of the AuthService instance. When it's no longer needed (e.g., when the view owning it disappears or the app closes), you **must** call `authService.invalidate()`. This ensures the internal Firebase authentication state listener is properly removed, preventing potential memory leaks or unexpected behavior.
 
-**Important:** When the `AuthService` instance is no longer needed (e.g., when the view using it disappears), you **must** call the `invalidate()` method. This ensures the Firebase authentication state listener is properly removed, preventing potential memory leaks or unexpected behavior.
+Example:
 
-**Example in SwiftUI:**
+If AuthService is owned by a specific view that gets dismissed:
 
 ```swift
-struct YourAuthenticatedView: View {
-    @StateObject var authService: AuthService // Assuming initialized appropriately
-
-    var body: some View {
-        VStack {
-            // ... your view content based on authService.state
-        }
-        .onDisappear {
-            print("YourAuthenticatedView disappearing, invalidating AuthService.")
-            authService.invalidate() // <-- Call invalidate here!
-        }
-    }
+.onDisappear {
+    authService.invalidate()
 }
+```
 
-## Configuration Options (`AuthConfig`)
+If AuthService is part of a global AppState object, `invalidate()` could be called in AppState's deinit or an equivalent lifecycle cleanup point.
 
-You configure `ASimpleAuthKit` by passing an `AuthConfig` struct when creating the `AuthService`.
+## Configuration Options (AuthConfig)
 
-*   `providers: [FUIAuthProvider]` (Required): An array of FirebaseUI authentication provider instances (e.g., `FUIEmailAuth()`, `FUIGoogleAuth(clientID: ...)`, `FUIOAuth.appleAuthProvider()`).
-*   `tosURL: URL?` (Optional): A URL to your Terms of Service page, displayed by FirebaseUI.
-*   `privacyPolicyURL: URL?` (Optional): A URL to your Privacy Policy page, displayed by FirebaseUI.
-*   `keychainAccessGroup: String?` (Optional): If your app belongs to an App Group and you want to share the last logged-in user ID (for biometric auth) with other apps in the group, provide your App Group identifier here. Requires the "Keychain Sharing" capability to be enabled for your app target(s).
-*   `appleUserPersister: ((_ appleUserID: String, _ firebaseUID: String) -> Void)?` (Optional): A callback invoked after a successful Sign in with Apple. Provides the stable Apple User ID and the corresponding Firebase UID. Use this to store your own mapping if needed for account management.
+ASimpleAuthKit is configured via the AuthConfig struct passed to AuthService's initializer:
+
+* **tosURL: URL? (Optional)**: URL to your Terms of Service.
+* **privacyPolicyURL: URL? (Optional)**: URL to your Privacy Policy.
+* **keychainAccessGroup: String? (Optional)**: For sharing the last user ID (for biometrics) across apps in an App Group. Requires the "Keychain Sharing" capability in your app target, configured with this group.
+* **appleUserPersister: ((_ appleUserID: String, _ firebaseUID: String) -> Void)? (Optional)**: A callback invoked after a successful Apple Sign-In. It provides the stable Apple User ID and the corresponding Firebase UID, allowing your application to persist this mapping if needed (e.g., for server-side validation or account recovery).
 
 ## API Overview
 
-*   **`AuthService`**: The main `ObservableObject` class implementing `AuthServiceProtocol`, managing the authentication state and logic. Use `@StateObject` or `@EnvironmentObject` to manage its lifecycle.
-*   **`AuthServiceProtocol`**: The protocol defining the public interface of `AuthService`.
-*   **`AuthConfig`**: Struct used to configure `AuthService`.
-*   **`AuthState`**: Enum representing the possible authentication states (`signedOut`, `authenticating`, `signedIn`, `requiresBiometrics`, `requiresAccountLinking`, `requiresMergeConflictResolution`).
-*   **`AuthUser`**: Struct representing the signed-in user's basic information (`uid`, `email`, `displayName`, `isAnonymous`, `providerID`).
-*   **`AuthError`**: Enum representing possible errors during authentication. Check `lastError` on `AuthService`.
-*   **`RootViewControllerFinder.swift`**: Contains helper functions (`findTopMostViewController`) to find the currently visible view controller, often needed for presenting the FirebaseUI view controller.
+* **AuthService: ObservableObject**: The main class for interacting with the authentication system.
+  * **state: AuthState (Published)**: The current authentication state.
+  * **lastError: AuthError? (Published)**: The last error that occurred.
+  * **biometryTypeString: String**: A display string for the available biometry type ("Face ID", "Touch ID").
+  * **signInWithEmail(email:password:) async**
+  * **createAccountWithEmail(email:password:displayName:) async**
+  * **signInWithGoogle(presentingViewController:) async**
+  * **signInWithApple(presentingViewController:) async**
+  * **signOut()** (Synchronous, but state updates via listener are async)
+  * **sendPasswordResetEmail(to:) async**
+  * **authenticateWithBiometrics(reason:) async**
+  * **cancelPendingAction()**: Reverts from states like .requiresAccountLinking to .signedOut.
+  * **invalidate()**: Cleans up resources, primarily the Firebase auth state listener. Must be called.
+* **AuthConfig**: Struct for initial configuration.
+* **AuthState**: Enum representing different authentication states.
+* **AuthUser**: Struct holding basic information about the authenticated user.
+* **AuthError**: Enum for detailed error information.
+* **RootViewControllerFinder.swift**: (Included in package) Helper findTopMostViewController() for presenting OS-level UIs from SwiftUI.
+## Error Handling
 
-## Running Tests (For Contributors)
+Observe `authService.lastError` in your UI to display relevant error messages. The AuthError enum provides `.localizedDescription` and specific cases (e.g., `.wrongPassword`, `.emailAlreadyInUse`, `.accountLinkingRequired`) for robust error handling and guiding the user.
 
-The package uses the **Firebase Emulator Suite** (specifically the Auth emulator) for testing internal functionality.
+## Testing ASimpleAuthKit (For Package Contributors)
 
-**Prerequisites:**
+The package includes unit tests (ASimpleAuthKitTests) that utilize the Firebase Emulator Suite (specifically the Auth emulator) for certain internal functionality.
 
-1.  **Node.js & npm:** Required to install the Firebase CLI. ([Install Node.js](https://nodejs.org/))
-2.  **Firebase CLI:** Install globally: `npm install -g firebase-tools`.
-3.  **Login (Optional):** Run `firebase login` once to authenticate the CLI.
+### Prerequisites for Running Package Tests:
 
-**Setup:**
+* **Node.js & npm**: Required to install the Firebase CLI. ([Install Node.js](https://nodejs.org/))
+* **Firebase CLI**: Install or update: `npm install -g firebase-tools`.
+* **Login (Optional but Recommended)**: Run `firebase login` once to authenticate the CLI.
 
-1.  **Emulator Config:** The necessary `firebase.json` file is included in the repository root to configure the Auth emulator (port `9099` by default).
-2.  **Test Plist:** The `Tests/ASimpleAuthKitTests/GoogleService-Info-Tests.plist` file is included in the repository. It contains **dummy placeholder values** required to initialize the Firebase SDK *only* for tests. **Do not use this file in a real application.** It should not contain any sensitive information.
+### Setup for Package Tests:
 
-**Running:**
+* **Emulator Config**: The firebase.json file (included in the package root) configures the Auth emulator (port 9099 by default).
+* **Test Plist**: The Tests/ASimpleAuthKitTests/GoogleService-Info-Tests.plist file is included. It contains dummy placeholder values required to initialize the Firebase SDK for tests only. Do not use this file in a real application. It must not contain sensitive information. The Bundle ID in this test plist (oi.appsimple.ASimpleAuthKitTests) is used by the test setup.
 
-1.  **Start Emulator:** Navigate to the package's root directory in your terminal and run:
-    ```bash
-    firebase emulators:start --only auth --project asimpleauthkit-test-project
-    ```
-    *(This uses the dummy project ID specified in the test plist and start command).* Leave this terminal window running while you execute tests.
-2.  **Run Tests:**
-    *   **Xcode:** Open the package (`Package.swift`) in Xcode (File -> Open...) and run the tests for the `ASimpleAuthKitTests` target (Product -> Test or Cmd+U).
-    *   **Command Line:** In a *new* terminal window (while the emulator is running in the other), navigate to the package root and run: `swift test`.
+### Running Package Tests:
+
+1. **Start Emulator**: Navigate to the package's root directory in your terminal and run:
+
+```bash
+firebase emulators:start --only auth --project asimpleauthkit-test-project
+```
+
+(This uses a dummy project ID specified in test setup and the start command). Leave this terminal window running while you execute tests.
+
+2. **Run Tests**:
+   * **Xcode**: Open the package (Package.swift) in Xcode (File -> Open...) and run the tests for the ASimpleAuthKitTests target (Product -> Test or Cmd+U).
+   * **Command Line**: In a new terminal window (while the emulator is running), navigate to the package root and run: `swift test`.
+
+### Important Note on Testing Live Firebase SDK Calls in Package Tests:
+
+Direct calls to `FirebaseAuth.Auth.auth()` methods that interact with the keychain (e.g., `signInAnonymously()`, `signIn(withEmail:password:)`) may fail or be unreliable within the Swift Package Manager's test environment. This is often due to Bundle ID mismatches and keychain entitlement issues inherent to how SPM test targets are built and run.
+
+The majority of `AuthServiceTests` use a `MockFirebaseAuthenticator` to unit test AuthService's internal logic and state transitions robustly.
+
+Tests that attempted to use live `Auth.auth()` calls against the emulator (e.g., for validating full linking flows or biometric re-authentication setup within the package tests) are currently skipped using `XCTSkip`. These specific scenarios are difficult to reliably test at the package level due to the aforementioned keychain limitations.
+
+### Recommendation for Testing Full Integration:
+
+It is highly recommended that consuming applications write their own integration tests for flows that involve ASimpleAuthKit interacting with a live (emulated) Firebase backend. These app-level tests will run in the app's correctly configured environment (correct bundle ID, entitlements, etc.), allowing for proper keychain access and providing more comprehensive end-to-end validation.
 
 ## Contributing
 
@@ -324,4 +425,4 @@ Contributions are welcome! Please feel free to open an issue on GitHub to discus
 
 ## License
 
-This package is released under the MIT License. See [LICENSE](LICENSE) file for details.
+This package is released under the MIT License. See the LICENSE file for details.
