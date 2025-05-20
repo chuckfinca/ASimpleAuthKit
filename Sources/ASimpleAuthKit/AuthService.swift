@@ -331,7 +331,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
         switch error {
         case .accountLinkingRequired(let email, let attemptedProviderIdFromError):
-            // The actual AuthCredential (if any) is now stored within FirebaseAuthenticator.
+            // The actual AuthCredential (if any) is stored within FirebaseAuthenticator.
             // AuthService needs to retrieve it from there to store in its own pendingCredentialToLinkAfterReauth.
             self.pendingCredentialToLinkAfterReauth = self.firebaseAuthenticator.pendingCredentialForLinking
             self.emailForLinking = email
@@ -378,16 +378,12 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
                 // lastError is already set.
                 // Stay in .requiresAccountLinking to allow another attempt or cancellation by user.
                 print("AuthService: Re-authentication for linking failed with error. Staying in .requiresAccountLinking.")
-                // (providers list remains empty based on current logic)
-                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: nil))
+                setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: self.pendingCredentialToLinkAfterReauth?.provider))
             } else if !state.isPendingResolution {
                 // If not a re-auth for linking AND not already in a pending resolution state,
                 // then clear user data and go to signedOut.
                 clearLocalUserDataAndSetSignedOutState()
             }
-            // If we ARE in a pending state (e.g. .requiresAccountLinking) and the re-auth attempt
-            // itself fails with an error other than .cancelled (e.g. wrong password),
-            // lastError is set, and the state remains .requiresAccountLinking, allowing another try.
         }
     }
 
@@ -433,11 +429,11 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         if oldState == newState {
             // If the state is the same but it's an error state, ensure lastError is also considered.
             // This check is mostly to avoid redundant print statements if nothing truly changed.
-            if case .requiresAccountLinking(let lEmail, let lProviders) = newState,
-                case .requiresAccountLinking(let rEmail, let rProviders) = oldState {
+            if case .requiresAccountLinking(let lEmail, let lProvider) = newState,
+                case .requiresAccountLinking(let rEmail, let rProvider) = oldState {
                 // Allow if email or providers changed, or if lastError changed
-                // For now, providers don't change in this state from AuthService, so email and lastError are key.
-                if lEmail == rEmail && lProviders == rProviders { // Basic check, lastError is observed separately
+                // For now, provider doesn't change in this state from AuthService, so email and lastError are key.
+                if lEmail == rEmail && lProvider == rProvider { // Basic check, lastError is observed separately
                     // return // Could return if we are sure no other context change (like lastError) needs processing
                 }
             } else {

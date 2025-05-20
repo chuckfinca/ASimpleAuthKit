@@ -310,7 +310,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     self.pendingCredentialForLinking = cred // Store the actual credential internally
                     print("FirebaseAuthenticator: Stored pending credential for linking. Provider: \(cred.provider)")
                     // Return an AuthError with Sendable information only
-                    return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: "password")
+                    return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: cred.provider)
                 } else {
                     print("FirebaseAuthenticator: Error - accountExistsWithDifferentCredential but no credential found in error/attempt.")
                     // This situation suggests something is wrong, perhaps the attemptedCredential was nil.

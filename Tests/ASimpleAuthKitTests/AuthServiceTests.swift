@@ -283,25 +283,16 @@ final class AuthServiceTests: XCTestCase {
     func testLinkingFlow_AppleSignIn_AccountExistsWithEmail_ReauthWithEmail_LinksApple() async throws {
         let existingEmail = "linktest@example.com"
         let actualAppleCredential = createPlaceholderAuthCredential(providerID: "apple.com")
-        let appleProviderIdString = actualAppleCredential.provider
         let appleCredentialProviderId = createPlaceholderAuthCredential(providerID: "apple.com")
 
         // 1. Initial Apple Sign-In attempt fails with accountLinkingRequired
         let linkingError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: appleCredentialProviderId.provider)
         mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in
-            print("TEST signInWithAppleResultProvider: Current mock pending = \(self.mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil") BEFORE force")
             self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(actualAppleCredential)
-            print("TEST signInWithAppleResultProvider: Current mock pending = \(self.mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil") AFTER force")
             return .failure(linkingError)
         }
 
-        print("Test Step 1: Initial Apple Sign-In attempt...")
-//        await sut.signInWithApple(presentingViewController: dummyVC)
-        print("TEST: Just before calling sut.signInWithApple. Mock's pending = \(mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil")")
         await sut.signInWithApple(presentingViewController: dummyVC)
-        print("TEST: Just after calling sut.signInWithApple. Mock's pending = \(mockFirebaseAuthenticator.pendingCredentialForLinking?.provider ?? "nil")")
-        print("TEST: Just after calling sut.signInWithApple. SUT's pending = \(sut.pendingCredentialToLinkAfterReauth?.provider ?? "nil")")
-
 
         guard case .requiresAccountLinking(let email, _) = sut.state else {
             XCTFail("Expected .requiresAccountLinking state, got \(sut.state). Error: \(String(describing: sut.lastError))")
