@@ -58,7 +58,22 @@ public enum AuthError: Error, Equatable, Sendable {
         case .configurationError(let m): return "Configuration Error: \(m)"
         case .keychainError(let s): return "Keychain error (Code: \(s))."
         case .biometricsNotAvailable: return "Biometric authentication is not available on this device."
-        case .biometricsFailed: return "Biometric authentication failed."
+        case .biometricsFailed(let code):
+            if let code = code {
+                switch code {
+                case .userCancel:
+                    return "Biometric authentication was canceled."
+                case .userFallback:
+                    return "Password option was selected instead of biometrics."
+                case .biometryNotEnrolled:
+                    return "Biometric authentication is not set up on this device."
+                case .biometryLockout:
+                    return "Biometric authentication is temporarily locked due to too many failed attempts."
+                default:
+                    return "Biometric authentication failed: \(code)."
+                }
+            }
+            return "Biometric authentication failed."
         case .firebaseAuthError(let d):
             if d.domain == AuthErrorDomain {
                 switch d.code {
