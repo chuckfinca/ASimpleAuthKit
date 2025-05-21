@@ -58,14 +58,14 @@ public enum AuthState: Equatable, Sendable {
         return false
     }
 
-    var allowsSignInAttempt: Bool {
+    public var allowsSignInAttempt: Bool {
         switch self {
         case .signedOut, .requiresBiometrics, .requiresAccountLinking, .requiresMergeConflictResolution: return true
         case .authenticating, .signedIn: return false
         }
     }
 
-    var isPendingResolution: Bool {
+    public var isPendingResolution: Bool {
         switch self {
         case .requiresAccountLinking, .requiresMergeConflictResolution: return true
         default: return false
