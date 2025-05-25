@@ -89,13 +89,13 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Google sign-in.")
-        
+
         // Get client ID from Firebase configuration
         guard let clientID = FirebaseApp.app()?.options.clientID else {
             print("FirebaseAuthenticator: Google Sign-In error - Firebase Client ID not found.")
             throw AuthError.configurationError("Google Sign-In: Firebase Client ID missing.")
         }
-        
+
         // Configure Google Sign-In if not already configured or if client ID has changed
         let currentConfig = GIDSignIn.sharedInstance.configuration
         if currentConfig == nil || currentConfig?.clientID != clientID {
@@ -312,40 +312,42 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             switch nsError.code {
             case AuthErrorCode.accountExistsWithDifferentCredential.rawValue:
                 let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
-                // IMPORTANT: Get the credential Firebase wants you to link.
                 let credentialToStoreForLinking = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
 
                 if let cred = credentialToStoreForLinking {
-                    self.pendingCredentialForLinking = cred // Store the actual credential internally
+                    self.pendingCredentialForLinking = cred
                     print("FirebaseAuthenticator: Stored pending credential for linking. Provider: \(cred.provider)")
-                    // Return an AuthError with Sendable information only
                     return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: cred.provider)
                 } else {
                     print("FirebaseAuthenticator: Error - accountExistsWithDifferentCredential but no credential found in error/attempt.")
-                    // This situation suggests something is wrong, perhaps the attemptedCredential was nil.
                     return .missingLinkingInfo
                 }
 
             case AuthErrorCode.emailAlreadyInUse.rawValue:
                 let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
                 print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (likely from create user). Suggesting linking.")
-                self.pendingCredentialForLinking = nil // No specific credential to link from a failed create user.
-                // Return an AuthError with Sendable information, indicating "password" was attempted for creation.
+                self.pendingCredentialForLinking = nil
                 return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: attemptedCredential?.provider)
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
                 print("FirebaseAuthenticator: Credential already in use by another account. This could be a merge conflict.")
-                // This error typically means the credential (e.g., Google token) you tried to LINK
-                // to the current user is already associated with a DIFFERENT Firebase user.
-                // For simplicity, map to a specific mergeConflictError string.
-                // AuthService can then decide to put UI into .requiresMergeConflictResolution or similar.
                 let message = "This sign-in method is already associated with a different user account. Please sign in with that account if you wish to merge, or contact support."
-                return .mergeConflictError(message) // Using the simplified mergeConflictError
+                return .mergeConflictError(message)
+
+            case AuthErrorCode.invalidCredential.rawValue:
+                print("FirebaseAuthenticator: Invalid credential error - likely wrong email/password combination.")
+                // Create a FirebaseErrorData with a user-friendly message
+                let userFriendlyError = FirebaseErrorData(
+                    code: nsError.code,
+                    domain: nsError.domain,
+                    message: "Invalid credentials. Please check and try again."
+                )
+                return .firebaseAuthError(userFriendlyError)
 
             default:
                 return AuthError.makeFirebaseAuthError(error)
             }
         }
-        return AuthError.makeFirebaseAuthError(error) // Fallback for other domains
+        return AuthError.makeFirebaseAuthError(error)
     }
 }

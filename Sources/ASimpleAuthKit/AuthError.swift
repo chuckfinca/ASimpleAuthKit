@@ -77,6 +77,8 @@ public enum AuthError: Error, Equatable, Sendable {
         case .firebaseAuthError(let d):
             if d.domain == AuthErrorDomain {
                 switch d.code {
+                case AuthErrorCode.invalidCredential.rawValue:
+                    return "Invalid credentials. Please check and try again."
                 case AuthErrorCode.wrongPassword.rawValue:
                     return "Incorrect password. Please try again."
                 case AuthErrorCode.userNotFound.rawValue:
@@ -92,12 +94,26 @@ public enum AuthError: Error, Equatable, Sendable {
                     return "A network error occurred. Please check your connection and try again."
                 case AuthErrorCode.tooManyRequests.rawValue:
                     return "We have detected too many requests from your device. Please try again later."
+                case AuthErrorCode.invalidEmail.rawValue:
+                    return "Please enter a valid email address."
+                case AuthErrorCode.weakPassword.rawValue:
+                    return "Password must be at least 6 characters long."
+                case AuthErrorCode.userDisabled.rawValue:
+                    return "This account has been disabled. Please contact support."
+                case AuthErrorCode.operationNotAllowed.rawValue:
+                    return "This sign-in method is not enabled. Please try a different method."
+                case AuthErrorCode.expiredActionCode.rawValue:
+                    return "This reset link has expired. Please request a new one."
+                case AuthErrorCode.invalidActionCode.rawValue:
+                    return "This reset link is invalid. Please request a new one."
+                case AuthErrorCode.requiresRecentLogin.rawValue:
+                    return "Please sign in again to continue."
                 default:
                     return "Authentication error: \(d.message) (Code: \(d.code))"
                 }
             }
             return "Authentication error: \(d.message) (Code: \(d.code))"
-            
+
         case .accountLinkingError(let m): return "Account Linking Error: \(m)"
         case .mergeConflictError(let m): return "Account Merge Conflict: \(m)"
         case .accountLinkingRequired(let email, let attemptedProviderId):
@@ -130,11 +146,11 @@ public enum AuthError: Error, Equatable, Sendable {
         guard let error = error else {
             return .biometricsFailed(nil)
         }
-        
+
         if let laError = error as? LAError {
             return .biometricsFailed(laError.code)
         }
-        
+
         return .biometricsFailed(nil)
     }
 
@@ -143,5 +159,55 @@ public enum AuthError: Error, Equatable, Sendable {
             return .providerSpecificError(provider: provider, underlyingError: FirebaseErrorData(code: nsError.code, domain: nsError.domain, message: nsError.localizedDescription))
         }
         return .providerSpecificError(provider: provider, underlyingError: nil)
+    }
+}
+
+// MARK: - Field Validation Support
+
+public extension AuthError {
+    enum ValidationField: String, CaseIterable, Sendable {
+        case email
+        case password
+    }
+    
+    /// Returns the field that should be highlighted for this error, if any
+    var affectedField: ValidationField? {
+        switch self {
+        case .firebaseAuthError(let data):
+            switch data.code {
+            case AuthErrorCode.invalidCredential.rawValue,
+                 AuthErrorCode.wrongPassword.rawValue,
+                 AuthErrorCode.userNotFound.rawValue:
+                return .email // Show on email field for auth failures
+            case AuthErrorCode.invalidEmail.rawValue:
+                return .email
+            case AuthErrorCode.weakPassword.rawValue:
+                return .password
+            default:
+                return nil
+            }
+        case .accountLinkingRequired:
+            return .email // Email field is the focus for linking issues
+        default:
+            return nil
+        }
+    }
+    
+    /// Returns true if this error should show a red border on the password field
+    var shouldHighlightPassword: Bool {
+        switch self {
+        case .firebaseAuthError(let data):
+            switch data.code {
+            case AuthErrorCode.invalidCredential.rawValue,
+                 AuthErrorCode.wrongPassword.rawValue:
+                return true // Highlight both email and password for credential failures
+            case AuthErrorCode.weakPassword.rawValue:
+                return true
+            default:
+                return false
+            }
+        default:
+            return false
+        }
     }
 }
