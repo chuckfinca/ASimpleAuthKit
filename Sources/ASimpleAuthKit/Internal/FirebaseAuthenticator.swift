@@ -235,14 +235,8 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             self.currentAppleSignInContinuation = nil // Clear immediately
             self.currentRawNonceForAppleSignIn = nil // Clear nonce
 
-            let nsError = error as NSError
-            if nsError.domain == ASAuthorizationErrorDomain && nsError.code == ASAuthorizationError.canceled.rawValue {
-                print("FirebaseAuthenticator: Apple Sign-In cancelled by user.")
-                continuation.resume(throwing: AuthError.cancelled)
-            } else {
-                print("FirebaseAuthenticator: Apple Sign-In failed: \(error.localizedDescription)")
-                continuation.resume(throwing: AuthError.makeProviderSpecificError(provider: "Apple", error: error))
-            }
+            print("FirebaseAuthenticator: Apple Sign-In failed: \(error.localizedDescription)")
+            continuation.resume(throwing: AuthError.makeProviderSpecificError(provider: "Apple", error: error))
         }
     }
 
@@ -335,14 +329,12 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 return .mergeConflictError(message)
 
             case AuthErrorCode.invalidCredential.rawValue:
-                print("FirebaseAuthenticator: Invalid credential error - likely wrong email/password combination.")
-                // Create a FirebaseErrorData with a user-friendly message
-                let userFriendlyError = FirebaseErrorData(
-                    code: nsError.code,
-                    domain: nsError.domain,
-                    message: "Invalid credentials. Please check and try again."
-                )
-                return .firebaseAuthError(userFriendlyError)
+                print("FirebaseAuthenticator: Invalid credential error - providing helpful guidance.")
+                return .helpfulInvalidCredential(email: email ?? "unknown")
+
+            case AuthErrorCode.userNotFound.rawValue:
+                print("FirebaseAuthenticator: User not found - providing helpful guidance.")
+                return .helpfulUserNotFound(email: email ?? "unknown")
 
             default:
                 return AuthError.makeFirebaseAuthError(error)

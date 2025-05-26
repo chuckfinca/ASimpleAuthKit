@@ -1,4 +1,6 @@
 import Foundation
+import GoogleSignIn
+import AuthenticationServices
 import LocalAuthentication
 @preconcurrency import FirebaseAuth // For AuthErrorCode constants. AuthCredential is not directly in Sendable errors.
 
@@ -27,6 +29,8 @@ public enum AuthError: Error, Equatable, Sendable {
     case missingLinkingInfo
     case providerSpecificError(provider: String, underlyingError: FirebaseErrorData?)
     case reauthenticationRequired(providerId: String?)
+    case helpfulInvalidCredential(email: String)
+    case helpfulUserNotFound(email: String)
 
 
     public static func == (lhs: AuthError, rhs: AuthError) -> Bool {
@@ -47,6 +51,10 @@ public enum AuthError: Error, Equatable, Sendable {
             return lProv == rProv && lErr == rErr
         case (.reauthenticationRequired(let lId), .reauthenticationRequired(let rId)):
             return lId == rId
+        case (.helpfulInvalidCredential(let lEmail), .helpfulInvalidCredential(let rEmail)):
+            return lEmail == rEmail
+        case (.helpfulUserNotFound(let lEmail), .helpfulUserNotFound(let rEmail)):
+            return lEmail == rEmail
         default: return false
         }
     }
@@ -134,6 +142,11 @@ public enum AuthError: Error, Equatable, Sendable {
             return baseMessage
         case .reauthenticationRequired:
             return "Reauthentication required. App UI needs to handle this flow."
+        case .helpfulInvalidCredential(let email):
+            return "We couldn't sign you in with that password. You might have created your account using Google, Apple, or a different password. Try signing in with Google or Apple, or use 'Forgot Password' if you signed up with email."
+
+        case .helpfulUserNotFound(let email):
+            return "No account found for \(email). You can create a new account, or try signing in with Google or Apple if you've used those before."
         }
     }
 
@@ -155,10 +168,17 @@ public enum AuthError: Error, Equatable, Sendable {
     }
 
     static func makeProviderSpecificError(provider: String, error: Error?) -> AuthError {
-        if let nsError = error as NSError? {
-            return .providerSpecificError(provider: provider, underlyingError: FirebaseErrorData(code: nsError.code, domain: nsError.domain, message: nsError.localizedDescription))
+        guard let nsError = error as NSError? else {
+            return .providerSpecificError(provider: provider, underlyingError: nil)
         }
-        return .providerSpecificError(provider: provider, underlyingError: nil)
+
+        // Check for cancellation errors from any provider
+        if (nsError.domain == kGIDSignInErrorDomain && nsError.code == GIDSignInError.canceled.rawValue) ||
+            (nsError.domain == ASAuthorizationErrorDomain && nsError.code == ASAuthorizationError.canceled.rawValue) {
+            return .cancelled
+        }
+
+        return .providerSpecificError(provider: provider, underlyingError: FirebaseErrorData(code: nsError.code, domain: nsError.domain, message: nsError.localizedDescription))
     }
 }
 
@@ -168,8 +188,9 @@ public extension AuthError {
     enum ValidationField: String, CaseIterable, Sendable {
         case email
         case password
+        case general
     }
-    
+
     /// Returns the field that should be highlighted for this error, if any
     var affectedField: ValidationField? {
         switch self {
@@ -188,11 +209,13 @@ public extension AuthError {
             }
         case .accountLinkingRequired:
             return .email // Email field is the focus for linking issues
+        case .helpfulInvalidCredential, .helpfulUserNotFound:
+            return .general
         default:
             return nil
         }
     }
-    
+
     /// Returns true if this error should show a red border on the password field
     var shouldHighlightPassword: Bool {
         switch self {
