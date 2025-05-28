@@ -162,6 +162,9 @@ struct YourAuthenticationScreen: View {
     @State private var email = ""
     @State private var password = ""
     @State private var displayName = "" // For sign-up
+    
+    @State private var isSendingResetEmail = false
+    @State private var resetEmailMessage: String? // For success/error feedback
 
     // Helper to find the top-most view controller for presenting OS-level UIs (like Apple Sign-In)
     @MainActor
@@ -231,9 +234,25 @@ struct YourAuthenticationScreen: View {
                     }
                     
                     Button("Forgot Password?") {
-                        Task { await authService.sendPasswordResetEmail(to: email) }
-                        // UI should show a message like "Password reset email sent if account exists."
+                    Task {
+                        isSendingResetEmail = true // Show local progress
+                        resetEmailMessage = nil    // Clear previous message
+                        await authService.sendPasswordResetEmail(to: email)
+                        isSendingResetEmail = false // Hide local progress
+
+                        if authService.lastError == nil {
+                            // Success (or rather, request submitted to Firebase)
+                            resetEmailMessage = "If an account exists for \(email), a password reset link has been sent."
+                            // Clear the email field if desired
+                            // self.email = ""
+                        } else {
+                            // Error is already in authService.lastError
+                            // You could also copy it to resetEmailMessage if you want dedicated display for this action
+                            // resetEmailMessage = authService.lastError?.localizedDescription
+                        }
                     }
+                }
+                .disabled(isSendingResetEmail) // Disable button during operation
                     .font(.caption)
                 
                 case .authenticating(let message):
@@ -304,6 +323,21 @@ struct YourAuthenticationScreen: View {
                         .font(.caption)
                         .padding(.top)
                 }
+                
+                if isSendingResetEmail {
+                    ProgressView() // Or some other local indicator
+                }
+                if let message = resetEmailMessage {
+                    Text(message)
+                        .foregroundColor(authService.lastError == nil ? .green : .red) // Style based on success/error
+                        .font(.caption)
+                } else if let error = authService.lastError, !authService.state.isAuthenticating /* to avoid showing old errors during other auth ops */ {
+                    // General error display if resetEmailMessage isn't specifically set for an error
+                    Text("Error: \(error.localizedDescription)")
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+
             }
             .padding()
             .navigationTitle("Sign In / Sign Up")

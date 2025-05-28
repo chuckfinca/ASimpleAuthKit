@@ -129,48 +129,39 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     public func sendPasswordResetEmail(to email: String) async {
         guard !email.isEmpty else {
-            lastError = .configurationError("Email address cannot be empty for password reset.")
+            // Set lastError for this specific configuration issue
+            self.lastError = .configurationError("Email address cannot be empty for password reset.")
+            // UI should check lastError after this call returns.
+            // No global state change is appropriate here.
             return
         }
 
-        let wasAlreadyAuthenticating = state.isAuthenticating
-        setState(.authenticating("Sending Reset Email..."))
-        lastError = nil
+        // Clear any previous error before attempting the operation
+        self.lastError = nil
+        // We are NOT changing the global `state` to .authenticating
+        // The UI calling this should manage its own "sending..." state if needed.
 
         do {
             try await firebaseAuthenticator.sendPasswordResetEmail(to: email)
             print("AuthService: Password reset email initiated for \(email).")
-
-            if !wasAlreadyAuthenticating {
-                if let firebaseUser = Auth.auth().currentUser {
-                    let user = AuthUser(firebaseUser: firebaseUser)
-                    setState(.signedIn(user))
-                } else {
-                    setState(.signedOut)
-                }
-            }
-
+            // `lastError` remains nil on success.
+            // The UI can interpret nil `lastError` after this call as "request submitted".
+            // No global state change is needed as the user's auth status hasn't changed.
         } catch let e as AuthError {
-            lastError = e
-            if !wasAlreadyAuthenticating {
-                if let firebaseUser = Auth.auth().currentUser {
-                    let user = AuthUser(firebaseUser: firebaseUser)
-                    setState(.signedIn(user))
-                } else {
-                    setState(.signedOut)
-                }
-            }
+            self.lastError = e
+            // UI will pick up this error.
+            // No global state change needed.
         } catch {
-            lastError = .unknown
-            if !wasAlreadyAuthenticating {
-                if let firebaseUser = Auth.auth().currentUser {
-                    let user = AuthUser(firebaseUser: firebaseUser)
-                    setState(.signedIn(user))
-                } else {
-                    setState(.signedOut)
-                }
-            }
+            self.lastError = .unknown
+            // UI will pick up this error.
+            // No global state change needed.
         }
+        // The original logic to revert state based on `wasAlreadyAuthenticating`
+        // and `Auth.auth().currentUser` is removed because we are no longer
+        // changing the state to `.authenticating` within this method.
+        // The global `state` should remain as it was before this call
+        // (e.g., .signedOut, or .signedIn if the user was already signed in
+        // and then requested a password reset for their own account).
     }
 
     public func signOut() {
