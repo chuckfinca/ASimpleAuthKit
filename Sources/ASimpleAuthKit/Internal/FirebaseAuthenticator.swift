@@ -1,7 +1,7 @@
 import Foundation
 import FirebaseAuth
 import FirebaseCore
-import AuthenticationServices // For Sign in with Apple
+import AuthenticationServices
 import GoogleSignIn
 import GoogleSignInSwift
 import UIKit
@@ -26,13 +26,13 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         self.config = config
         self.secureStorage = secureStorage
         super.init()
-        print("FirebaseAuthenticator (Direct): Initialized.")
+        print("FirebaseAuthenticator: Initialized.")
     }
 
     func clearTemporaryCredentials() {
         pendingCredentialForLinking = nil
         currentRawNonceForAppleSignIn = nil
-        print("FirebaseAuthenticator (Direct): Cleared temporary credentials and nonce.")
+        print("FirebaseAuthenticator: Cleared temporary credentials and nonce.")
     }
 
     // MARK: - Email/Password Authentication
@@ -58,7 +58,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 let changeRequest = authDataResult.user.createProfileChangeRequest()
                 changeRequest.displayName = displayName
                 try await changeRequest.commitChanges()
-                // Re-fetch user to get updated profile
                 if let updatedFirebaseUser = Auth.auth().currentUser {
                     let user = AuthUser(firebaseUser: updatedFirebaseUser)
                     await handleSuccessfulAuth(for: user, fromProvider: "Email/Password (Create)")
@@ -90,13 +89,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Google sign-in.")
 
-        // Get client ID from Firebase configuration
         guard let clientID = FirebaseApp.app()?.options.clientID else {
             print("FirebaseAuthenticator: Google Sign-In error - Firebase Client ID not found.")
             throw AuthError.configurationError("Google Sign-In: Firebase Client ID missing.")
         }
 
-        // Configure Google Sign-In if not already configured or if client ID has changed
         let currentConfig = GIDSignIn.sharedInstance.configuration
         if currentConfig == nil || currentConfig?.clientID != clientID {
             print("FirebaseAuthenticator: Configuring Google Sign-In with client ID from Firebase.")
@@ -110,7 +107,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     continuation.resume(throwing: AuthError.unknown)
                     return
                 }
-                self.currentGoogleSignInContinuation = nil // Clear continuation
+                self.currentGoogleSignInContinuation = nil
 
                 if let error = error {
                     print("FirebaseAuthenticator: GoogleSignIn SDK error: \(error.localizedDescription)")
@@ -126,7 +123,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 let credential = GoogleAuthProvider.credential(withIDToken: idToken,
                                                                accessToken: user.accessToken.tokenString)
 
-                Task { @MainActor in // Ensure Firebase auth runs on MainActor
+                Task { @MainActor in
                     do {
                         let authDataResult = try await Auth.auth().signIn(with: credential)
                         let authUser = AuthUser(firebaseUser: authDataResult.user)
@@ -141,12 +138,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         }
     }
 
-
     // MARK: - Sign in with Apple
 
     func signInWithApple(presentingViewController: UIViewController, rawNonce: String) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Sign in with Apple.")
-        self.currentRawNonceForAppleSignIn = rawNonce // Store raw nonce for use in delegate
+        self.currentRawNonceForAppleSignIn = rawNonce
         let hashedNonce = AuthUtilities.sha256(rawNonce)
 
         let appleIDProvider = ASAuthorizationAppleIDProvider()
@@ -156,12 +152,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
         let authorizationController = ASAuthorizationController(authorizationRequests: [request])
         authorizationController.delegate = self
-        authorizationController.presentationContextProvider = self // `self` provides the window
+        authorizationController.presentationContextProvider = self
 
-        // Store the continuation to be resumed by the delegate
         return try await withCheckedThrowingContinuation { continuation in
             self.currentAppleSignInContinuation = continuation
-            authorizationController.performRequests() // This presents the Apple Sign-In UI
+            authorizationController.performRequests()
         }
     }
 
@@ -174,7 +169,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 print("FirebaseAuthenticator: Apple Sign-In - No continuation found.")
                 return
             }
-            self.currentAppleSignInContinuation = nil // Clear immediately
+            self.currentAppleSignInContinuation = nil
 
             guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
                 print("FirebaseAuthenticator: Apple Sign-In - Invalid Apple ID credential.")
@@ -187,7 +182,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 continuation.resume(throwing: AuthError.configurationError("Apple Sign-In: Nonce missing."))
                 return
             }
-            self.currentRawNonceForAppleSignIn = nil // Clear after use
+            self.currentRawNonceForAppleSignIn = nil
 
             guard let appleIDToken = appleIDCredential.identityToken else {
                 print("FirebaseAuthenticator: Apple Sign-In - ID token missing.")
@@ -203,17 +198,15 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             let firebaseCredential = OAuthProvider.appleCredential(
                 withIDToken: idTokenString,
                 rawNonce: rawNonce,
-                fullName: appleIDCredential.fullName // Can be nil after first sign-in
+                fullName: appleIDCredential.fullName
             )
 
-            // Stable Apple User ID
             let appleUserID = appleIDCredential.user
 
             do {
                 let authDataResult = try await Auth.auth().signIn(with: firebaseCredential)
                 let user = AuthUser(firebaseUser: authDataResult.user)
 
-                // Persist Apple User ID mapping if configured
                 self.config.appleUserPersister?(appleUserID, user.uid)
 
                 await self.handleSuccessfulAuth(for: user, fromProvider: "Apple")
@@ -226,36 +219,27 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     }
 
     nonisolated public func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        Task { @MainActor [weak self] in // Switch to MainActor
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
             guard let continuation = self.currentAppleSignInContinuation else {
                 print("FirebaseAuthenticator: Apple Sign-In (Error) - No continuation found.")
                 return
             }
-            self.currentAppleSignInContinuation = nil // Clear immediately
-            self.currentRawNonceForAppleSignIn = nil // Clear nonce
+            self.currentAppleSignInContinuation = nil
+            self.currentRawNonceForAppleSignIn = nil
 
             print("FirebaseAuthenticator: Apple Sign-In failed: \(error.localizedDescription)")
             continuation.resume(throwing: AuthError.makeProviderSpecificError(provider: "Apple", error: error))
         }
     }
 
-    // ASAuthorizationControllerPresentationContextProviding
     public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        // This needs to return the window of the presenting view controller.
-        // The app side should pass the UIWindow if possible, or we find it.
-        // For now, let's assume we can get it from a passed-in view controller indirectly.
-        // This part is tricky without direct access to the presentingViewController's window.
-        // The caller (AuthService) will have the VC.
-        // This needs careful handling if the VC is not yet in the window hierarchy.
         guard let keyWindow = UIApplication.shared.connectedScenes
             .filter({ $0.activationState == .foregroundActive })
             .map({ $0 as? UIWindowScene })
             .compactMap({ $0 })
             .first?.windows
             .filter({ $0.isKeyWindow }).first else {
-            // Fallback or error, though this should ideally always be available
-            // when Apple Sign In is triggered.
             fatalError("ASimpleAuthKit: Could not find key window for Apple Sign In presentation.")
         }
         return keyWindow
@@ -268,16 +252,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         do {
             let authDataResult = try await user.link(with: credentialToLink)
             let updatedUser = AuthUser(firebaseUser: authDataResult.user)
-            // After successful linking, the new provider is part of the user.
-            // No specific provider string here as it's a generic link.
             await handleSuccessfulAuth(for: updatedUser, fromProvider: "Link (\(credentialToLink.provider))")
             return updatedUser
         } catch {
             print("FirebaseAuthenticator: Linking credential failed: \(error.localizedDescription)")
-            // If linking fails because the credential is ALREADY in use by ANOTHER account,
-            // this is AuthErrorCode.credentialAlreadyInUse.
-            // This is a more complex scenario - potentially a merge situation or just a hard stop.
-            throw processFirebaseError(error) // Let AuthService decide next steps based on this error
+            throw processFirebaseError(error)
         }
     }
 
@@ -287,15 +266,9 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         print("FirebaseAuthenticator: Successfully authenticated user \(user.uid) via \(fromProvider).")
         // Clear any pending linking credential as sign-in was successful
         self.pendingCredentialForLinking = nil
-        if !user.isAnonymous {
-            do {
-                try await secureStorage.saveLastUserID(user.uid)
-                print("FirebaseAuthenticator: Saved user ID \(user.uid) to secure storage.")
-            } catch {
-                print("FirebaseAuthenticator: WARNING - Failed to save user ID \(user.uid) to secure storage: \(error.localizedDescription)")
-                // Non-fatal, app can continue.
-            }
-        }
+        
+        // NOTE: Removed automatic user ID saving - AuthService now handles this (Option B approach)
+        // The AuthService will save the user ID after successful authentication
     }
 
     private func processFirebaseError(_ error: Error, attemptedCredential: AuthCredential? = nil, email: String? = nil) -> AuthError {

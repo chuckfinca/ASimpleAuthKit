@@ -14,11 +14,11 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/firebase/firebase-ios-sdk.git",
-            from: "10.0.0" // Or your current version e.g., 10.22.0
+            from: "10.0.0"
         ),
-        .package( // Add GoogleSignIn
+        .package(
             url: "https://github.com/google/GoogleSignIn-iOS.git",
-            from: "7.0.0" // Check for the latest version
+            from: "7.0.0"
         )
     ],
     targets: [
@@ -27,7 +27,7 @@ let package = Package(
             dependencies: [
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
-                .product(name: "GoogleSignInSwift", package: "GoogleSignIn-iOS") // For Swift Concurrency support
+                .product(name: "GoogleSignInSwift", package: "GoogleSignIn-iOS")
             ]
         ),
         .testTarget(
@@ -37,7 +37,6 @@ let package = Package(
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk")
             ],
             resources: [
-                // Tell SPM to copy the plist into the test bundle
                 .copy("GoogleService-Info-Tests.plist")
             ]
         ),

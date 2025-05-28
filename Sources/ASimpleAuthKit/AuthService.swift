@@ -16,6 +16,10 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         return biometricAuthenticator.biometryTypeString
     }
 
+    public var isBiometricsAvailable: Bool {
+        return biometricAuthenticator.isBiometricsAvailable
+    }
+
     // Dependencies
     private let config: AuthConfig
     private let firebaseAuthenticator: FirebaseAuthenticatorProtocol
@@ -45,29 +49,29 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         self.firebaseAuthenticator = firebaseAuthenticator
         self.biometricAuthenticator = biometricAuthenticator
         self.isTestMode = isTestMode
-        print("AuthService (Direct): Initializing. Test Mode: \(isTestMode)")
+        print("AuthService: Initializing. Test Mode: \(isTestMode)")
 
         self.authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] (_, user) in
-            Task { @MainActor [weak self] in // Ensure MainActor context
+            Task { @MainActor [weak self] in
                 guard let strongSelf = self else { return }
-                guard !strongSelf.isTestMode else { return } // Don't run listener logic in pure test mode where state is forced
+                guard !strongSelf.isTestMode else { return }
                 await strongSelf.handleAuthStateChange(firebaseUser: user)
             }
         }
-        // Also check initial state, especially if app launches quickly or listener setup is delayed
-        Task { @MainActor [weak self] in // Ensure MainActor context
+
+        // Check initial state
+        Task { @MainActor [weak self] in
             guard let strongSelf = self else { return }
             guard !strongSelf.isTestMode else { return }
             await strongSelf.handleAuthStateChange(firebaseUser: Auth.auth().currentUser)
         }
-        print("AuthService (Direct): Init complete, listener added.")
+        print("AuthService: Init complete, listener added.")
     }
 
     // Convenience Initializer (Public - for production use)
     public convenience init(config: AuthConfig) {
         let storage = KeychainStorage(accessGroup: config.keychainAccessGroup)
         let bioAuth = BiometricAuthenticator()
-        // Pass the config to FirebaseAuthenticator (though it might not use all parts if FUI is gone)
         let fireAuth = FirebaseAuthenticator(config: config, secureStorage: storage)
         self.init(
             config: config,
@@ -75,14 +79,11 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             firebaseAuthenticator: fireAuth,
             biometricAuthenticator: bioAuth
         )
-        print("AuthService (Direct): Convenience Init completed.")
+        print("AuthService: Convenience Init completed.")
     }
 
     deinit {
-        // The authStateHandle is automatically removed by Firebase when the listener object (AuthService) is deallocated,
-        // if it wasn't removed by an explicit invalidate() call earlier.
-        // However, explicit invalidate() by the owner is still best practice for Combine cancellables.
-        print("AuthService (Direct): Deinit.")
+        print("AuthService: Deinit.")
     }
 
     // MARK: - Public API - Lifecycle
@@ -90,9 +91,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         if let handle = authStateHandle {
             Auth.auth().removeStateDidChangeListener(handle)
             authStateHandle = nil
-            print("AuthService (Direct): Firebase Auth state listener removed via invalidate().")
+            print("AuthService: Firebase Auth state listener removed via invalidate().")
         }
-        cancellables.forEach { $0.cancel() } // Cancel any Combine subscriptions
+        cancellables.forEach { $0.cancel() }
     }
 
     // MARK: - Public API - Core Authentication Methods
@@ -120,7 +121,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     public func signInWithApple(presentingViewController: UIViewController) async {
         let rawNonce = AuthUtilities.randomNonceString()
-        // The hashed nonce is created and used within FirebaseAuthenticator now
         await performAuthOperation(
             authAction: { try await self.firebaseAuthenticator.signInWithApple(presentingViewController: presentingViewController, rawNonce: rawNonce) },
             authActionType: .signIn
@@ -133,40 +133,29 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             return
         }
 
-        // Store if we were already in an auth flow initiated by another operation.
-        // This helps decide if this method should be responsible for reverting the .authenticating state.
         let wasAlreadyAuthenticating = state.isAuthenticating
         setState(.authenticating("Sending Reset Email..."))
         lastError = nil
 
         do {
             try await firebaseAuthenticator.sendPasswordResetEmail(to: email)
-            // What state to go to here? Usually, stay on the current screen and show a success message.
-            // For simplicity, AuthService doesn't manage a dedicated "passwordResetEmailSent" state.
-            // The UI should handle displaying a confirmation.
             print("AuthService: Password reset email initiated for \(email).")
-            // UI should show a message like "If an account exists for this email, a reset link has been sent."
 
-            // If this method set the state to .authenticating("Sending Reset Email..."),
-            // then it's responsible for reverting it.
-            // We revert to a state consistent with the current Firebase user.
             if !wasAlreadyAuthenticating {
                 if let firebaseUser = Auth.auth().currentUser {
-                    // User is still signed in (or was signed in), re-check biometrics or set to signedIn
-                    await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
+                    let user = AuthUser(firebaseUser: firebaseUser)
+                    setState(.signedIn(user))
                 } else {
-                    // No current Firebase user, so go to signedOut
                     setState(.signedOut)
                 }
             }
-            // If wasAlreadyAuthenticating was true, another operation is in progress,
-            // and this password reset was a side-task. Let the main auth flow resolve the state.
 
         } catch let e as AuthError {
             lastError = e
             if !wasAlreadyAuthenticating {
                 if let firebaseUser = Auth.auth().currentUser {
-                    await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
+                    let user = AuthUser(firebaseUser: firebaseUser)
+                    setState(.signedIn(user))
                 } else {
                     setState(.signedOut)
                 }
@@ -175,7 +164,8 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             lastError = .unknown
             if !wasAlreadyAuthenticating {
                 if let firebaseUser = Auth.auth().currentUser {
-                    await checkBiometricsRequirement(for: AuthUser(firebaseUser: firebaseUser))
+                    let user = AuthUser(firebaseUser: firebaseUser)
+                    setState(.signedIn(user))
                 } else {
                     setState(.signedOut)
                 }
@@ -189,24 +179,40 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         self.firebaseAuthenticator.clearTemporaryCredentials()
 
         do {
-            try Auth.auth().signOut() // This part is synchronous
+            try Auth.auth().signOut()
             print("AuthService: Firebase sign-out call successful.")
-            // Explicitly clear local data and set state immediately
-            // The listener will still fire but should find the state already correct.
             clearLocalUserDataAndSetSignedOutState()
-            lastError = nil // Ensure error is cleared on successful sign-out
+            lastError = nil
             print("AuthService: State set to signedOut and local data cleared synchronously after sign out call.")
         } catch {
             print("AuthService: Sign out failed: \(error.localizedDescription)")
             lastError = AuthError.makeFirebaseAuthError(error)
-            clearLocalUserDataAndSetSignedOutState() // Also ensure cleanup on error
+            clearLocalUserDataAndSetSignedOutState()
         }
     }
 
-    // MARK: - Public API - State Resolution Methods
+    // MARK: - Public API - Biometric Control (New Manual Control)
+
+    public func requireBiometricAuthentication() {
+        guard state == .signedOut else {
+            print("AuthService: requireBiometricAuthentication called but not in .signedOut state")
+            return
+        }
+        guard isBiometricsAvailable else {
+            print("AuthService: requireBiometricAuthentication called but biometrics not available")
+            return
+        }
+        setState(.requiresBiometrics)
+    }
+
+    public func testBiometricAuthentication() async throws {
+        guard isBiometricsAvailable else {
+            throw AuthError.biometricsNotAvailable
+        }
+        try await performBiometricAuthenticationInternal(reason: "Verify biometric authentication works")
+    }
 
     public func authenticateWithBiometrics(reason: String = "Sign in to your account") async {
-        // Implementation similar to before, but ensures no FirebaseUI interaction
         guard state == .requiresBiometrics else {
             print("AuthService: Biometric auth requested but not in .requiresBiometrics state.")
             return
@@ -224,21 +230,22 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             try await performBiometricAuthenticationInternal(reason: reason)
 
             guard let refreshedUser = Auth.auth().currentUser, refreshedUser.uid == uid else {
-                lastError = .unknown // User changed during bio auth
+                lastError = .unknown
                 clearLocalUserDataAndSetSignedOutState()
                 return
             }
-            setState(.signedIn(AuthUser(firebaseUser: refreshedUser))) // Successfully signed in via biometrics
+            setState(.signedIn(AuthUser(firebaseUser: refreshedUser)))
         } catch let e as AuthError {
             lastError = e
-            setState(.requiresBiometrics) // Stay in requiresBiometrics on failure
+            setState(.requiresBiometrics)
         } catch {
             lastError = .unknown
-            setState(.requiresBiometrics) // Stay in requiresBiometrics on failure
+            setState(.requiresBiometrics)
         }
     }
 
-    // This method is called when the user cancels a linking/merge flow from the UI
+    // MARK: - Public API - State Resolution Methods
+
     public func cancelPendingAction() {
         print("AuthService: cancelPendingAction requested. Current State: \(state)")
         guard state.isPendingResolution else {
@@ -247,7 +254,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
         self.pendingCredentialToLinkAfterReauth = nil
         firebaseAuthenticator.clearTemporaryCredentials()
-        lastError = nil // Clear any linking-related error
+        lastError = nil
         setState(.signedOut)
     }
 
@@ -257,69 +264,49 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     private func performAuthOperation(
         authAction: @escaping () async throws -> AuthUser,
-        authActionType: AuthActionType // signIn, signUp, link (link might not be used as an explicit type here)
+        authActionType: AuthActionType
     ) async {
-        // Determine if this is a re-authentication step in a linking flow
         let isReAuthForLinking = (self.pendingCredentialToLinkAfterReauth != nil && authActionType == .signIn)
 
         if !isReAuthForLinking {
-            // This is a fresh sign-in or sign-up attempt
             guard state.allowsSignInAttempt(for: authActionType) else {
                 print("AuthService: Auth operation not allowed for current state \(state) and action type \(authActionType).")
-                // Potentially set an error here if this is a programmatic mistake
-                // self.lastError = .configurationError("Auth operation not allowed in current state.")
                 return
             }
-            resetForNewAuthAttempt() // Clears lastError, previous pendingCredential, etc.
+            resetForNewAuthAttempt()
             setState(.authenticating(authActionType == .signUp ? "Creating Account..." : "Signing In..."))
         } else {
-            // This is a re-authentication step during linking
-            // Keep existing lastError (which should be .accountLinkingRequired)
-            // Keep existing pendingCredentialToLinkAfterReauth
-            // Keep existing emailForLinking
             setState(.authenticating("Verifying existing account..."))
         }
 
         do {
-            let user = try await authAction() // Perform the actual email sign-in, Google sign-in, etc.
+            let user = try await authAction()
 
             if let credentialToLink = self.pendingCredentialToLinkAfterReauth, isReAuthForLinking {
-                // Condition 'isReAuthForLinking' ensures authActionType was .signIn and pendingCred was present
                 print("AuthService: Re-authentication successful for linking. User: \(user.uid). Attempting to link stored credential.")
                 await completeAccountLinking(loggedInUser: user, credentialToLink: credentialToLink)
             } else if self.pendingCredentialToLinkAfterReauth != nil && authActionType == .signUp {
-                // This case should ideally not happen if sign-up during linking isn't allowed.
-                // If a sign-up happens while a link is pending, what's the desired behavior?
-                // For now, treat as a new user, link is abandoned.
                 print("AuthService WARNING: Sign-up occurred while a link was pending. Abandoning link. New user: \(user.uid)")
                 self.pendingCredentialToLinkAfterReauth = nil
                 self.firebaseAuthenticator.clearTemporaryCredentials()
-                await checkBiometricsRequirement(for: user) // Process this new user
-            }
-            else {
-                // Standard sign-in or sign-up success (not part of a linking re-auth flow)
+                await handleSuccessfulAuthentication(for: user)
+            } else {
                 print("AuthService: Auth operation successful. User: \(user.uid).")
-                // Ensure pendingCredentialToLinkAfterReauth is nil if we reach here without linking
                 if self.pendingCredentialToLinkAfterReauth != nil {
                     print("AuthService WARNING: Auth succeeded but an unhandled pending credential existed. Clearing it now.")
                     self.pendingCredentialToLinkAfterReauth = nil
-                    self.firebaseAuthenticator.clearTemporaryCredentials() // Clear associated authenticator state too
+                    self.firebaseAuthenticator.clearTemporaryCredentials()
                 }
-                await checkBiometricsRequirement(for: user)
+                await handleSuccessfulAuthentication(for: user)
             }
         } catch let e as AuthError {
-            // If the re-auth attempt itself fails (e.g. wrong password for email re-auth)
-            // handleAuthOperationError will be called. It needs to preserve the linking context.
             await handleAuthOperationError(e, authActionType: authActionType, wasReAuthForLinking: isReAuthForLinking)
         } catch {
             print("AuthService: Unknown error during auth operation: \(error.localizedDescription)")
             lastError = .unknown
-            if !isReAuthForLinking { // Only fully reset if not a failed re-auth for linking
+            if !isReAuthForLinking {
                 clearLocalUserDataAndSetSignedOutState()
             } else {
-                // If it was a re-auth for linking that failed with an unknown error,
-                // revert to .requiresAccountLinking state.
-                // Ensure providers list is handled consistently (currently empty).
                 setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: nil))
             }
         }
@@ -327,66 +314,44 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     private func handleAuthOperationError(_ error: AuthError, authActionType: AuthActionType, wasReAuthForLinking: Bool = false) async {
         print("AuthService: Handling AuthError: \(error.localizedDescription) for action: \(authActionType)")
-        self.lastError = error // Always set the most recent error
+        self.lastError = error
 
         switch error {
         case .accountLinkingRequired(let email, let attemptedProviderIdFromError):
-            // The actual AuthCredential (if any) is stored within FirebaseAuthenticator.
-            // AuthService needs to retrieve it from there to store in its own pendingCredentialToLinkAfterReauth.
             self.pendingCredentialToLinkAfterReauth = self.firebaseAuthenticator.pendingCredentialForLinking
             self.emailForLinking = email
 
-            // Determine the providerId to show in the AuthState.
-            // It should primarily be what the error tells us.
-            // If the error for some reason didn't have it, we could try to derive it from our stored credential,
-            // but the error *should* have it now.
             let finalAttemptedProviderId = attemptedProviderIdFromError ?? self.pendingCredentialToLinkAfterReauth?.provider
 
             print("AuthService: Account linking required for \(email). Attempted with provider: \(finalAttemptedProviderId ?? "unknown"). Actual pending link credential in AuthService: \(self.pendingCredentialToLinkAfterReauth != nil)")
 
-            // AuthState.requiresAccountLinking takes (email, attemptedProviderId)
             setState(.requiresAccountLinking(email: email, attemptedProviderId: finalAttemptedProviderId))
 
-        case .mergeConflictError(let message): // Handles the string-based merge error
+        case .mergeConflictError(let message):
             print("AuthService: Merge conflict error received: \(message)")
-            // The AuthState.requiresMergeConflictResolution is a generic signal.
-            // The UI would show the message from lastError.
             setState(.requiresMergeConflictResolution)
 
         case .cancelled:
-            if wasReAuthForLinking { // If user cancelled the Google/Apple UI during re-auth
+            if wasReAuthForLinking {
                 print("AuthService: Re-authentication for linking cancelled. Staying in .requiresAccountLinking.")
-                // The attemptedProviderId might be nil if the cancellation happened before provider determination,
-                // or it could be the provider of pendingCredentialToLinkAfterReauth.
-                // For simplicity, passing nil, as the specific provider might not be relevant if user cancelled.
                 setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: self.pendingCredentialToLinkAfterReauth?.provider))
             } else {
-                // Standard cancellation of initial sign-in/sign-up
                 clearLocalUserDataAndSetSignedOutState()
             }
 
         case .reauthenticationRequired:
-            // This is a specific error that needs UI to prompt for re-auth.
-            // For now, just log and revert. A more complete flow would handle this.
             print("AuthService: Reauthentication required. App UI needs to handle this flow.")
-            clearLocalUserDataAndSetSignedOutState() // Simplistic handling for now
+            clearLocalUserDataAndSetSignedOutState()
 
         default:
-            // For other errors:
             if wasReAuthForLinking {
-                // The re-auth attempt itself failed (e.g., wrong password).
-                // lastError is already set.
-                // Stay in .requiresAccountLinking to allow another attempt or cancellation by user.
                 print("AuthService: Re-authentication for linking failed with error. Staying in .requiresAccountLinking.")
                 setState(.requiresAccountLinking(email: self.emailForLinking ?? "linking email", attemptedProviderId: self.pendingCredentialToLinkAfterReauth?.provider))
             } else if !state.isPendingResolution {
-                // If not a re-auth for linking AND not already in a pending resolution state,
-                // then clear user data and go to signedOut.
                 clearLocalUserDataAndSetSignedOutState()
             }
         }
     }
-
 
     // MARK: - Account Linking Specific Logic
 
@@ -394,47 +359,54 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         guard let firebaseUser = Auth.auth().currentUser, firebaseUser.uid == loggedInUser.uid else {
             print("AuthService ERROR: User mismatch during account link finalization.")
             self.lastError = .accountLinkingError("User mismatch during link finalization.")
-            clearLocalUserDataAndSetSignedOutState() // Clears pending creds
+            clearLocalUserDataAndSetSignedOutState()
             return
         }
 
         setState(.authenticating("Linking Account..."))
-        // Don't clear lastError yet, it might be the .accountLinkingRequired error that led here.
 
         do {
             let updatedUser = try await firebaseAuthenticator.linkCredential(credentialToLink, to: firebaseUser)
             print("AuthService: Account linking successful! Final user UID: \(updatedUser.uid)")
-            self.lastError = nil // Clear error on successful link
+            self.lastError = nil
             self.pendingCredentialToLinkAfterReauth = nil
             firebaseAuthenticator.clearTemporaryCredentials()
-            await checkBiometricsRequirement(for: updatedUser) // Final state update
+            await handleSuccessfulAuthentication(for: updatedUser)
         } catch let e as AuthError {
             print("AuthService: Account linking failed: \(e.localizedDescription)")
-            // If linking failed (e.g. credentialAlreadyInUse by a *third* account),
-            // lastError is updated. What state to go to?
-            // Reverting to signedOut is safest unless we have a specific merge flow for this.
-            self.lastError = e // Update with the new linking error
-            clearLocalUserDataAndSetSignedOutState() // This will clear pendingCredentialToLinkAfterReauth
+            self.lastError = e
+            clearLocalUserDataAndSetSignedOutState()
         } catch {
             print("AuthService: Unknown error during account linking finalization: \(error.localizedDescription)")
             self.lastError = .unknown
-            clearLocalUserDataAndSetSignedOutState() // This will clear pendingCredentialToLinkAfterReauth
+            clearLocalUserDataAndSetSignedOutState()
         }
     }
 
-
     // MARK: - Private Helper Methods
+
+    private func handleSuccessfulAuthentication(for user: AuthUser) async {
+        // Save user ID automatically (Option B approach)
+        if !user.isAnonymous {
+            do {
+                try await secureStorage.saveLastUserID(user.uid)
+                print("AuthService: Saved user ID \(user.uid) to secure storage.")
+            } catch {
+                print("AuthService: WARNING - Failed to save user ID \(user.uid) to secure storage: \(error.localizedDescription)")
+            }
+        }
+
+        // Always go to signedIn - no automatic biometric transitions
+        setState(.signedIn(user))
+    }
+
     private func setState(_ newState: AuthState) {
         let oldState = self.state
         if oldState == newState {
-            // If the state is the same but it's an error state, ensure lastError is also considered.
-            // This check is mostly to avoid redundant print statements if nothing truly changed.
             if case .requiresAccountLinking(let lEmail, let lProvider) = newState,
                 case .requiresAccountLinking(let rEmail, let rProvider) = oldState {
-                // Allow if email or providers changed, or if lastError changed
-                // For now, provider doesn't change in this state from AuthService, so email and lastError are key.
-                if lEmail == rEmail && lProvider == rProvider { // Basic check, lastError is observed separately
-                    // return // Could return if we are sure no other context change (like lastError) needs processing
+                if lEmail == rEmail && lProvider == rProvider {
+                    return
                 }
             } else {
                 return
@@ -448,21 +420,20 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         print("AuthService: Resetting for new auth attempt.")
         lastError = nil
         pendingCredentialToLinkAfterReauth = nil
-        firebaseAuthenticator.clearTemporaryCredentials() // Important!
+        firebaseAuthenticator.clearTemporaryCredentials()
         emailForLinking = nil
     }
 
     private func clearLocalUserDataAndSetSignedOutState() {
-        Task { // Fire and forget for keychain
+        Task {
             try? await secureStorage.clearLastUserID()
             print("AuthService: Cleared last user ID from secure storage.")
         }
-        // pendingCredentialToLinkAfterReauth and authenticator creds should be cleared by calling context or signOut
         if pendingCredentialToLinkAfterReauth != nil {
             pendingCredentialToLinkAfterReauth = nil
             print("AuthService: Cleared pendingCredentialToLinkAfterReauth in clearLocalUserDataAndSetSignedOutState.")
         }
-        firebaseAuthenticator.clearTemporaryCredentials() // Ensure authenticator's temp creds are also cleared
+        firebaseAuthenticator.clearTemporaryCredentials()
         emailForLinking = nil
         setState(.signedOut)
     }
@@ -480,105 +451,48 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         }
     }
 
-    // MARK: - Firebase Auth State Listener & Biometrics Logic (Largely Unchanged)
+    // MARK: - Firebase Auth State Listener
 
     private func handleAuthStateChange(firebaseUser: FirebaseAuth.User?) async {
-        // This guard should already be in the init call to addStateDidChangeListener, but double-check
         guard !isTestMode else {
             print("AuthService Listener: In test mode, listener ignored.")
             return
         }
-        let currentAuthServiceState = self.state // Capture state at the beginning of this async task
+        let currentAuthServiceState = self.state
 
         if let fbUser = firebaseUser {
             let currentUser = AuthUser(firebaseUser: fbUser)
             print("AuthService Listener: Firebase User PRESENT (UID: \(currentUser.uid)). Current AuthService State: \(currentAuthServiceState)")
 
-            // Avoid interrupting an ongoing, user-initiated auth flow or resolution flow
-            // Check currentAuthServiceState, not self.state which might have changed if other async tasks run
             if currentAuthServiceState.isAuthenticating && currentAuthServiceState != .requiresBiometrics {
                 print("AuthService Listener: Ignoring update (AuthService currently busy: \(currentAuthServiceState))")
                 return
             }
-            if currentAuthServiceState.isPendingResolution { // e.g., .requiresAccountLinking
+            if currentAuthServiceState.isPendingResolution {
                 print("AuthService Listener: Ignoring update (AuthService currently pending resolution: \(currentAuthServiceState))")
                 return
             }
 
-            // If already signedIn with the same user, or requiresBiometrics for this user, re-check biometrics.
-            // This handles cases like app coming to foreground or biometrics settings changing.
-            // Compare with self.state here, as it's the most up-to-date at this point of execution.
-            if (self.state == .signedIn(currentUser) && !currentUser.isAnonymous) || self.state == .requiresBiometrics {
-                print("AuthService Listener: User \(currentUser.uid) already matches current state or requires biometrics. Re-evaluating biometrics.")
-                await checkBiometricsRequirement(for: currentUser) // This will call setState if needed
+            if self.state == .signedIn(currentUser) || self.state == .requiresBiometrics {
+                print("AuthService Listener: User \(currentUser.uid) already matches current state. No change needed.")
                 return
             }
 
-            // If user is present, but state is not signedIn or requiresBio for this user, transition.
-            print("AuthService Listener: Firebase user \(currentUser.uid) present. Current AuthService state \(self.state) is different. Updating state based on new Firebase user.")
-            await checkBiometricsRequirement(for: currentUser) // This will call setState
+            print("AuthService Listener: Firebase user \(currentUser.uid) present. Current AuthService state \(self.state) is different. Setting to signedIn.")
+            setState(.signedIn(currentUser))
 
-        } else { // Firebase User is ABSENT (nil)
+        } else {
             print("AuthService Listener: Firebase User ABSENT. Current AuthService State: \(currentAuthServiceState)")
 
-            // Only transition to signedOut if we are not already signedOut AND not in the middle of an auth attempt
-            // (e.g., user just tried to sign in, it failed, and then listener fires with nil).
-            // The auth operation itself should handle setting to signedOut on failure.
-            // This listener mainly handles external changes (e.g., token revoked, user deleted from console).
             if currentAuthServiceState != .signedOut && !currentAuthServiceState.isAuthenticating {
                 print("AuthService Listener: Firebase user became nil. Clearing local data and setting state to signedOut.")
-                clearLocalUserDataAndSetSignedOutState() // This also sets state to signedOut
-                lastError = nil // Clear any lingering error from previous session
+                clearLocalUserDataAndSetSignedOutState()
+                lastError = nil
             } else if currentAuthServiceState == .signedOut {
                 print("AuthService Listener: Firebase user is nil, state is already .signedOut. No state change needed from listener.")
-            } else { // currentAuthServiceState.isAuthenticating
+            } else {
                 print("AuthService Listener: Firebase user is nil, but an auth operation is in progress (\(currentAuthServiceState)). Letting operation complete or fail.")
-                // The auth operation itself should handle its outcome (e.g., setting .signedOut on failure).
             }
-        }
-    }
-
-    private func checkBiometricsRequirement(for user: AuthUser) async {
-        guard !user.isAnonymous else {
-            print("AuthService Biometrics Check: Skipping for anonymous user \(user.uid). Setting state to signedIn.")
-            setState(.signedIn(user))
-            return
-        }
-        // This internal helper determines the state and then setState is called with its result.
-        let determinedState = await determineBiometricStateInternal(for: user)
-        setState(determinedState)
-    }
-
-    private func determineBiometricStateInternal(for user: AuthUser) async -> AuthState {
-        // This guard should ideally be caught by the caller (checkBiometricsRequirement),
-        // but as a safeguard within this internal logic.
-        guard !user.isAnonymous else { return .signedIn(user) }
-
-        let lastUserID = await secureStorage.getLastUserID()
-        let bioAvailable = biometricAuthenticator.isBiometricsAvailable
-        print("AuthService Biometrics Logic: User \(user.uid). Stored UID: \(lastUserID ?? "nil"). Bio Available: \(bioAvailable).")
-
-        if bioAvailable && lastUserID == user.uid {
-            // User is known, biometrics are available and were likely used/set up before.
-            return .requiresBiometrics
-        } else {
-            // Conditions to save/update User ID in secure storage:
-            // 1. It's a new user signing in (lastUserID != user.uid).
-            // 2. It's the same user, but biometrics just became unavailable (so we shouldn't prompt next time, just sign in).
-            // 3. Biometrics is available, but lastUserID was nil (first non-anonymous sign-in on this device).
-            // Essentially, save if it's a non-anonymous user and they are not going into .requiresBiometrics state.
-            if lastUserID != user.uid || (lastUserID == user.uid && !bioAvailable) || (bioAvailable && lastUserID == nil) {
-                print("AuthService Biometrics Logic: Saving User ID \(user.uid) to secure storage. Reason: lastUID='\(lastUserID ?? "nil")', bioAvailable=\(bioAvailable).")
-                do {
-                    try await secureStorage.saveLastUserID(user.uid)
-                } catch {
-                    // Log the error. Depending on app requirements, this could be more critical.
-                    print("AuthService Biometrics WARNING: Failed to save User ID \(user.uid) to secure storage: \(error.localizedDescription)")
-                    // Potentially set lastError here if this is critical, e.g., self.lastError = .keychainError(...)
-                    // However, failing to save UID for biometrics shouldn't block sign-in.
-                }
-            }
-            return .signedIn(user)
         }
     }
 
@@ -588,7 +502,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         internal func forceStateForTesting(_ state: AuthState) {
             guard isTestMode else { return }
             print("AuthService (Test Mode): Forcing state to \(state)")
-            self.setState(state) // Use the internal setState to ensure printout
+            self.setState(state)
         }
     #endif
 }
@@ -598,15 +512,13 @@ fileprivate extension AuthState {
     func allowsSignInAttempt(for actionType: AuthService.AuthActionType) -> Bool {
         switch self {
         case .signedOut:
-            return true // Always allow from signedOut
+            return true
         case .requiresBiometrics:
-            // Allow if user is trying to sign in with a different method (e.g. password) instead of biometrics
             return actionType == .signIn
         case .requiresAccountLinking, .requiresMergeConflictResolution:
-            // Allow if it's a signIn action (which is the re-authentication step for linking/merging)
             return actionType == .signIn
         case .authenticating, .signedIn:
-            return false // Not allowed if already signed in or in the middle of another auth process
+            return false
         }
     }
 }
