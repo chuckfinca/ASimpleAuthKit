@@ -278,7 +278,19 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         if nsError.domain == AuthErrorDomain {
             switch nsError.code {
             case AuthErrorCode.accountExistsWithDifferentCredential.rawValue:
-                let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
+                // Try multiple sources for the email, prefer non-empty values
+                let conflictingEmail: String = {
+                    if let userInfoEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String, !userInfoEmail.isEmpty {
+                        return userInfoEmail
+                    }
+                    if let providedEmail = email, !providedEmail.isEmpty {
+                        return providedEmail
+                    }
+                    // If we still don't have an email, this is a configuration issue
+                    print("FirebaseAuthenticator: WARNING - No email available for account linking error")
+                    return "Please try again" // More user-friendly than "unknown"
+                }()
+                
                 let credentialToStoreForLinking = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
 
                 if let cred = credentialToStoreForLinking {
@@ -291,10 +303,20 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 }
 
             case AuthErrorCode.emailAlreadyInUse.rawValue:
-                let conflictingEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String ?? email ?? "unknown"
+                let conflictingEmail: String = {
+                    if let userInfoEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String, !userInfoEmail.isEmpty {
+                        return userInfoEmail
+                    }
+                    if let providedEmail = email, !providedEmail.isEmpty {
+                        return providedEmail
+                    }
+                    return "Please try again"
+                }()
+                
                 print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (likely from create user). Suggesting linking.")
                 self.pendingCredentialForLinking = nil
                 return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: attemptedCredential?.provider)
+
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
                 print("FirebaseAuthenticator: Credential already in use by another account. This could be a merge conflict.")
