@@ -107,10 +107,67 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     public func createAccountWithEmail(email: String, password: String, displayName: String? = nil) async {
         await performAuthOperation(
-            authAction: { try await self.firebaseAuthenticator.createAccountWithEmail(email: email, password: password, displayName: displayName) },
+            authAction: {
+                try await self.firebaseAuthenticator.createAccountWithEmail(email: email, password: password, displayName: displayName)
+            },
             authActionType: .signUp
         )
     }
+
+    public func sendVerificationEmail() async {
+        guard case .signedIn(let authUser) = state else {
+            print("AuthService: Cannot send verification email. User not signed in.")
+            // You could set lastError here if you want to signal this as a configuration issue.
+            // self.lastError = .configurationError("User must be signed in to send a verification email.")
+            return
+        }
+
+        guard let firebaseUser = Auth.auth().currentUser else {
+            print("AuthService: Cannot send verification email. No current Firebase user found.")
+            // self.lastError = .configurationError("Firebase user not available for sending verification email.")
+            return
+        }
+
+        // It's good practice to check if the UID matches, though if state is .signedIn(authUser),
+        // and firebaseUser exists, they *should* match unless something is very wrong.
+        guard firebaseUser.uid == authUser.uid else {
+            print("AuthService: Mismatch between AuthService user and Firebase current user. Aborting verification email.")
+            // self.lastError = .configurationError("User session mismatch.")
+            return
+        }
+
+        if firebaseUser.isEmailVerified {
+            print("AuthService: Email (\(authUser.email ?? "N/A")) is already verified.")
+            // Optionally set a success message or specific state if needed.
+            // For example, you could have a specific lastMessage: String? published property for non-error feedback.
+            // For now, just log and return.
+            return
+        }
+
+        // You might want to use a specific state for this operation, or just let UI show a spinner.
+        // For simplicity, let's not change the main .signedIn state here, but you can set lastError.
+        let previousState = self.state // In case you want to revert or manage UI based on it
+        // setState(.authenticating("Sending verification email...")) // Optional: if you want specific UI feedback
+
+        self.lastError = nil // Clear previous errors
+
+        do {
+            try await firebaseAuthenticator.sendEmailVerification(to: firebaseUser)
+            print("AuthService: Verification email request successful for \(authUser.email ?? "N/A").")
+            // Optionally, show a success message to the user (e.g., via a toast or published property)
+            // e.g., self.successMessage = "Verification email sent to \(authUser.email ?? "your email"). Please check your inbox."
+        } catch let e as AuthError {
+            print("AuthService: Failed to send verification email: \(e.localizedDescription)")
+            self.lastError = e
+        } catch {
+            print("AuthService: Unknown error sending verification email: \(error.localizedDescription)")
+            self.lastError = .unknown
+        }
+
+        // If you changed state to .authenticating, revert it
+        // setState(previousState)
+    }
+
 
     public func signInWithGoogle(presentingViewController: UIViewController) async {
         await performAuthOperation(
@@ -135,7 +192,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
         // Store the previous state to revert to it later
         let previousState = self.state
-        
+
         // Set authenticating state (same as other auth operations)
         setState(.authenticating("Sending reset email..."))
         lastError = nil
@@ -143,11 +200,11 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         do {
             try await firebaseAuthenticator.sendPasswordResetEmail(to: email)
             print("AuthService: Password reset email initiated for \(email).")
-            
+
             // Success - revert to previous state
             setState(previousState)
             // lastError remains nil on success
-            
+
         } catch let e as AuthError {
             self.lastError = e
             setState(previousState)
@@ -230,17 +287,26 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     // MARK: - Public API - State Resolution Methods
 
-    public func cancelPendingAction() {
-        print("AuthService: cancelPendingAction requested. Current State: \(state)")
+    public func resolvePendingAction() {
+        print("AuthService: resolvePendingAction requested. Current State: \(state)")
         guard state.isPendingResolution else {
-            print("AuthService: Cancel called but state is not pending resolution (\(state)). Ignoring.")
+            print("AuthService: resolvePendingAction called but state is not pending resolution (\(state)). Ignoring.")
             return
         }
-        self.pendingCredentialToLinkAfterReauth = nil
-        firebaseAuthenticator.clearTemporaryCredentials()
-        lastError = nil
-        setState(.signedOut)
+        resetAuthenticationState()
+        print("AuthService: Pending action resolved. State set to signedOut.")
     }
+
+    public func resetAuthenticationState() {
+        print("AuthService: resetAuthenticationState requested. Current State: \(state)")
+        self.pendingCredentialToLinkAfterReauth = nil
+        self.emailForLinking = nil
+        firebaseAuthenticator.clearTemporaryCredentials()
+        lastError = nil // Clear any error.
+        setState(.signedOut)
+        print("AuthService: Authentication state completely reset to signedOut.")
+    }
+
 
     // MARK: - Auth Operation Orchestration
 

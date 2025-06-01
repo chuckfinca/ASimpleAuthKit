@@ -73,6 +73,30 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         }
     }
 
+    func sendEmailVerification(to firebaseUser: FirebaseAuth.User) async throws {
+        guard !firebaseUser.isEmailVerified else {
+            print("FirebaseAuthenticator: Email for user \(firebaseUser.uid) is already verified.")
+            // Optionally, you could throw a specific error or just return if you want to signal this upstream.
+            // For now, let's just print and complete successfully as "nothing to do."
+            return
+        }
+
+        print("FirebaseAuthenticator: Attempting to send email verification to user \(firebaseUser.uid) (\(firebaseUser.email ?? "N/A")).")
+        do {
+            try await firebaseUser.sendEmailVerification()
+            print("FirebaseAuthenticator: Email verification sent successfully.")
+        } catch {
+            print("FirebaseAuthenticator: Sending email verification failed: \(error.localizedDescription)")
+            // You might want to process this Firebase error similar to how you do in `processFirebaseError`
+            // if there are specific error codes you want to handle differently for verification.
+            // For now, we'll rethrow it as a generic AuthError.makeFirebaseAuthError.
+            throw AuthError.makeFirebaseAuthError(error)
+        }
+        
+        // TODO: Refine error handling for sendEmailVerification specific errors
+        // For example, AuthErrorCode.tooManyRequests 
+    }
+
     func sendPasswordResetEmail(to email: String) async throws {
         print("FirebaseAuthenticator: Sending password reset email to \(email)")
         do {
@@ -266,7 +290,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         print("FirebaseAuthenticator: Successfully authenticated user \(user.uid) via \(fromProvider).")
         // Clear any pending linking credential as sign-in was successful
         self.pendingCredentialForLinking = nil
-        
+
         // NOTE: Removed automatic user ID saving - AuthService now handles this (Option B approach)
         // The AuthService will save the user ID after successful authentication
     }
@@ -290,7 +314,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     print("FirebaseAuthenticator: WARNING - No email available for account linking error")
                     return "Please try again" // More user-friendly than "unknown"
                 }()
-                
+
                 let credentialToStoreForLinking = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
 
                 if let cred = credentialToStoreForLinking {
@@ -312,7 +336,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     }
                     return "Please try again"
                 }()
-                
+
                 print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (likely from create user). Suggesting linking.")
                 self.pendingCredentialForLinking = nil
                 return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: attemptedCredential?.provider)

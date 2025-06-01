@@ -11,6 +11,7 @@ internal protocol FirebaseAuthenticatorProtocol {
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser
     func signInWithApple(presentingViewController: UIViewController, rawNonce: String) async throws -> AuthUser
     func sendPasswordResetEmail(to email: String) async throws
+    func sendEmailVerification(to firebaseUser: FirebaseAuth.User) async throws
 
     func linkCredential(_ credentialToLink: AuthCredential, to user: FirebaseAuth.User) async throws -> AuthUser
 

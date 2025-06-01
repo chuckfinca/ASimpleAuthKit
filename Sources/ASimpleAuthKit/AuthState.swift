@@ -26,6 +26,16 @@ public struct AuthUser: Equatable, Sendable {
         self.providerID = providerID
     }
 
+    public static func createPreviewUser(
+        uid: String = "previewUID",
+        email: String? = "preview@example.com",
+        displayName: String? = "Preview User",
+        isAnonymous: Bool = false,
+        providerID: String? = "password"
+    ) -> AuthUser {
+        return AuthUser(uid: uid, email: email, displayName: displayName, isAnonymous: isAnonymous, providerID: providerID)
+    }
+
     public static func == (lhs: AuthUser, rhs: AuthUser) -> Bool {
         return lhs.uid == rhs.uid // Compare only UID for equality
     }
@@ -52,7 +62,7 @@ public enum AuthState: Equatable, Sendable {
         default: return false
         }
     }
-    
+
     public var isAuthenticating: Bool {
         if case .authenticating = self { return true }
         return false

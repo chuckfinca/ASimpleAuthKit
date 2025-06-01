@@ -13,28 +13,31 @@ public protocol AuthServiceProtocol: ObservableObject {
     var isBiometricsAvailable: Bool { get } // New: Capability detection
 
     // --- Core Authentication Methods ---
-    func signInWithEmail(email: String, password: String) async
     func createAccountWithEmail(email: String, password: String, displayName: String?) async
+    func sendVerificationEmail() async
+    
+    func signInWithEmail(email: String, password: String) async
     func signInWithGoogle(presentingViewController: UIViewController) async
     func signInWithApple(presentingViewController: UIViewController) async
+    func sendPasswordResetEmail(to email: String) async
 
     func signOut()
-    func sendPasswordResetEmail(to email: String) async
 
     // --- Biometric Control Methods (New) ---
     /// Manually puts the AuthService into .requiresBiometrics state
     /// Call this when you want to require biometric authentication
     func requireBiometricAuthentication()
-    
+
     /// Tests biometric authentication without changing auth state
     /// Use this to verify biometrics work before enabling the preference
     func testBiometricAuthentication() async throws
-    
+
     /// Performs biometric authentication when in .requiresBiometrics state
     func authenticateWithBiometrics(reason: String) async
 
     // --- State Resolution Methods ---
-    func cancelPendingAction()
+    func resolvePendingAction()
+    func resetAuthenticationState()
 
     // --- Lifecycle ---
     func invalidate()
