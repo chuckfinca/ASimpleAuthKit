@@ -76,8 +76,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func sendEmailVerification(to firebaseUser: FirebaseAuth.User) async throws {
         guard !firebaseUser.isEmailVerified else {
             print("FirebaseAuthenticator: Email for user \(firebaseUser.uid) is already verified.")
-            // Optionally, you could throw a specific error or just return if you want to signal this upstream.
-            // For now, let's just print and complete successfully as "nothing to do."
             return
         }
 
@@ -87,9 +85,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             print("FirebaseAuthenticator: Email verification sent successfully.")
         } catch {
             print("FirebaseAuthenticator: Sending email verification failed: \(error.localizedDescription)")
-            // You might want to process this Firebase error similar to how you do in `processFirebaseError`
-            // if there are specific error codes you want to handle differently for verification.
-            // For now, we'll rethrow it as a generic AuthError.makeFirebaseAuthError.
             throw AuthError.makeFirebaseAuthError(error)
         }
 
@@ -184,7 +179,8 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         }
     }
 
-    // ASAuthorizationControllerDelegate methods
+    // MARK: - ASAuthorizationControllerDelegate methods
+    
     nonisolated public func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
 
         Task { @MainActor [weak self] in
@@ -288,10 +284,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     private func handleSuccessfulAuth(for user: AuthUser, fromProvider: String) async {
         print("FirebaseAuthenticator: Successfully authenticated user \(user.uid) via \(fromProvider).")
-        // Clear any pending linking credential as sign-in was successful
         self.pendingCredentialForLinking = nil
-
-        // NOTE: Removed automatic user ID saving - AuthService now handles this (Option B approach)
         // The AuthService will save the user ID after successful authentication
     }
 

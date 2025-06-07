@@ -2,9 +2,8 @@ import Foundation
 import GoogleSignIn
 import AuthenticationServices
 import LocalAuthentication
-@preconcurrency import FirebaseAuth // For AuthErrorCode constants. AuthCredential is not directly in Sendable errors.
+@preconcurrency import FirebaseAuth
 
-// Define a Sendable struct to hold Firebase error details safely across actors
 public struct FirebaseErrorData: Error, Equatable, Sendable {
     public let code: Int
     public let domain: String
@@ -95,11 +94,8 @@ public enum AuthError: Error, Equatable, Sendable {
                 case AuthErrorCode.userNotFound.rawValue:
                     return "No account found with this email address."
                 case AuthErrorCode.emailAlreadyInUse.rawValue:
-                    // This message might be less direct if we are guiding to link.
-                    // The .accountLinkingRequired error will have a more specific message.
                     return "This email address is already in use by another account."
                 case AuthErrorCode.credentialAlreadyInUse.rawValue:
-                    // This could lead to mergeConflictError
                     return "This sign-in method is already linked to an account, possibly a different one."
                 case AuthErrorCode.networkError.rawValue:
                     return "A network error occurred. Please check your connection and try again."
@@ -202,12 +198,12 @@ public extension AuthError {
         case .firebaseAuthError(let data):
             switch data.code {
             case AuthErrorCode.invalidCredential.rawValue,
-                 AuthErrorCode.wrongPassword.rawValue,
                  AuthErrorCode.userNotFound.rawValue:
                 return .email // Show on email field for auth failures
             case AuthErrorCode.invalidEmail.rawValue:
                 return .email
-            case AuthErrorCode.weakPassword.rawValue:
+            case AuthErrorCode.wrongPassword.rawValue,
+                 AuthErrorCode.weakPassword.rawValue:
                 return .password
             default:
                 return nil
@@ -221,14 +217,13 @@ public extension AuthError {
         }
     }
 
-    /// Returns true if this error should show a red border on the password field
     var shouldHighlightPassword: Bool {
         switch self {
         case .firebaseAuthError(let data):
             switch data.code {
             case AuthErrorCode.invalidCredential.rawValue,
                  AuthErrorCode.wrongPassword.rawValue:
-                return true // Highlight both email and password for credential failures
+                return true
             case AuthErrorCode.weakPassword.rawValue:
                 return true
             default:

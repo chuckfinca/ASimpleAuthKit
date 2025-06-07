@@ -9,13 +9,14 @@ public protocol AuthServiceProtocol: ObservableObject {
     var statePublisher: Published<AuthState>.Publisher { get }
     var lastError: AuthError? { get }
     var lastErrorPublisher: Published<AuthError?>.Publisher { get }
-    var biometryTypeString: String { get } // For UI display
-    var isBiometricsAvailable: Bool { get } // New: Capability detection
+
+    var biometryTypeString: String { get }
+    var isBiometricsAvailable: Bool { get }
 
     // --- Core Authentication Methods ---
     func createAccountWithEmail(email: String, password: String, displayName: String?) async
     func sendVerificationEmail() async
-    
+
     func signInWithEmail(email: String, password: String) async
     func signInWithGoogle(presentingViewController: UIViewController) async
     func signInWithApple(presentingViewController: UIViewController) async
@@ -23,7 +24,6 @@ public protocol AuthServiceProtocol: ObservableObject {
 
     func signOut()
 
-    // --- Biometric Control Methods (New) ---
     /// Manually puts the AuthService into .requiresBiometrics state
     /// Call this when you want to require biometric authentication
     func requireBiometricAuthentication()

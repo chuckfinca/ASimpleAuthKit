@@ -110,7 +110,7 @@ internal class KeychainStorage: SecureStorageProtocol {
             if status == errSecSuccess {
                 guard let data = dataTypeRef as? Data, let retrievedUserID = String(data: data, encoding: .utf8) else {
                     print("Keychain Task Error: Failed to decode retrieved data.")
-                    return nil // Failed to decode
+                    return nil
                 }
                 print("Keychain Task: Retrieved User ID \(retrievedUserID) from service '\(service)' \(accessGroup != nil ? "in group \(accessGroup!)" : "")")
                 return retrievedUserID

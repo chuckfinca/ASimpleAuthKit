@@ -68,13 +68,6 @@ public enum AuthState: Equatable, Sendable {
         if case .authenticating = self { return true }
         return false
     }
-//
-//    public var allowsSignInAttempt: Bool {
-//        switch self {
-//        case .signedOut, .requiresBiometrics, .requiresAccountLinking, .emailInUseSuggestSignIn, .requiresMergeConflictResolution: return true
-//        case .authenticating, .signedIn: return false
-//        }
-//    }
 
     public var isPendingResolution: Bool {
         switch self {

@@ -100,7 +100,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 
     public func signInWithEmail(email: String, password: String) async {
         await performAuthOperation(
-            authAction: { try await self.firebaseAuthenticator.signInWithEmail(email: email, password: password) },
+            authAction: {
+                try await self.firebaseAuthenticator.signInWithEmail(email: email, password: password)
+            },
             authActionType: .signIn
         )
     }
@@ -117,14 +119,11 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public func sendVerificationEmail() async {
         guard case .signedIn(let authUser) = state else {
             print("AuthService: Cannot send verification email. User not signed in.")
-            // You could set lastError here if you want to signal this as a configuration issue.
-            // self.lastError = .configurationError("User must be signed in to send a verification email.")
             return
         }
 
         guard let firebaseUser = Auth.auth().currentUser else {
             print("AuthService: Cannot send verification email. No current Firebase user found.")
-            // self.lastError = .configurationError("Firebase user not available for sending verification email.")
             return
         }
 
@@ -132,30 +131,21 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         // and firebaseUser exists, they *should* match unless something is very wrong.
         guard firebaseUser.uid == authUser.uid else {
             print("AuthService: Mismatch between AuthService user and Firebase current user. Aborting verification email.")
-            // self.lastError = .configurationError("User session mismatch.")
             return
         }
 
         if firebaseUser.isEmailVerified {
             print("AuthService: Email (\(authUser.email ?? "N/A")) is already verified.")
-            // Optionally set a success message or specific state if needed.
-            // For example, you could have a specific lastMessage: String? published property for non-error feedback.
-            // For now, just log and return.
             return
         }
 
-        // You might want to use a specific state for this operation, or just let UI show a spinner.
-        // For simplicity, let's not change the main .signedIn state here, but you can set lastError.
-        let previousState = self.state // In case you want to revert or manage UI based on it
-        // setState(.authenticating("Sending verification email...")) // Optional: if you want specific UI feedback
-
-        self.lastError = nil // Clear previous errors
+        let previousState = self.state
+        setState(.authenticating("Sending verification email..."))
+        self.lastError = nil
 
         do {
             try await firebaseAuthenticator.sendEmailVerification(to: firebaseUser)
             print("AuthService: Verification email request successful for \(authUser.email ?? "N/A").")
-            // Optionally, show a success message to the user (e.g., via a toast or published property)
-            // e.g., self.successMessage = "Verification email sent to \(authUser.email ?? "your email"). Please check your inbox."
         } catch let e as AuthError {
             print("AuthService: Failed to send verification email: \(e.localizedDescription)")
             self.lastError = e
@@ -164,14 +154,14 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             self.lastError = .unknown
         }
 
-        // If you changed state to .authenticating, revert it
-        // setState(previousState)
+        setState(previousState)
     }
-
 
     public func signInWithGoogle(presentingViewController: UIViewController) async {
         await performAuthOperation(
-            authAction: { try await self.firebaseAuthenticator.signInWithGoogle(presentingViewController: presentingViewController) },
+            authAction: {
+                try await self.firebaseAuthenticator.signInWithGoogle(presentingViewController: presentingViewController)
+            },
             authActionType: .signIn
         )
     }
@@ -179,7 +169,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public func signInWithApple(presentingViewController: UIViewController) async {
         let rawNonce = AuthUtilities.randomNonceString()
         await performAuthOperation(
-            authAction: { try await self.firebaseAuthenticator.signInWithApple(presentingViewController: presentingViewController, rawNonce: rawNonce) },
+            authAction: {
+                try await self.firebaseAuthenticator.signInWithApple(presentingViewController: presentingViewController, rawNonce: rawNonce)
+            },
             authActionType: .signIn
         )
     }
@@ -190,28 +182,19 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             return
         }
 
-        // Store the previous state to revert to it later
         let previousState = self.state
-
-        // Set authenticating state (same as other auth operations)
         setState(.authenticating("Sending reset email..."))
         lastError = nil
 
         do {
             try await firebaseAuthenticator.sendPasswordResetEmail(to: email)
             print("AuthService: Password reset email initiated for \(email).")
-
-            // Success - revert to previous state
-            setState(previousState)
-            // lastError remains nil on success
-
         } catch let e as AuthError {
             self.lastError = e
-            setState(previousState)
         } catch {
             self.lastError = .unknown
-            setState(previousState)
         }
+        setState(previousState)
     }
 
     public func signOut() {
@@ -302,7 +285,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         self.pendingCredentialToLinkAfterReauth = nil
         self.emailForLinking = nil
         firebaseAuthenticator.clearTemporaryCredentials()
-        lastError = nil // Clear any error.
+        lastError = nil
         setState(.signedOut)
         print("AuthService: Authentication state completely reset to signedOut.")
     }
@@ -369,9 +352,9 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         switch error {
         case .emailAlreadyInUseDuringCreation(let email):
             print("AuthService: Email \(email) is already in use from a creation attempt. Suggesting sign-in.")
-            self.lastError = error // Set the specific error
-            self.emailForLinking = email // Can still be used to pre-fill email field for sign-in attempts
-            self.pendingCredentialToLinkAfterReauth = nil // CRITICAL: No social/apple credential to link here
+            self.lastError = error
+            self.emailForLinking = email
+            self.pendingCredentialToLinkAfterReauth = nil
             setState(.emailInUseSuggestSignIn(email: email))
 
         case .accountLinkingRequired(let email, let attemptedProviderIdFromError):
@@ -443,7 +426,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     // MARK: - Private Helper Methods
 
     private func handleSuccessfulAuthentication(for user: AuthUser) async {
-        // Save user ID automatically (Option B approach)
         if !user.isAnonymous {
             do {
                 try await secureStorage.saveLastUserID(user.uid)
@@ -453,7 +435,6 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             }
         }
 
-        // Always go to signedIn - no automatic biometric transitions
         setState(.signedIn(user))
     }
 
@@ -525,6 +506,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
                 print("AuthService Listener: Ignoring update (AuthService currently busy: \(currentAuthServiceState))")
                 return
             }
+            
             if currentAuthServiceState.isPendingResolution {
                 print("AuthService Listener: Ignoring update (AuthService currently pending resolution: \(currentAuthServiceState))")
                 return
@@ -576,7 +558,7 @@ fileprivate extension AuthState {
             return actionType == .signIn
         case .authenticating, .signedIn:
             return false
-        case .emailInUseSuggestSignIn(email: let email):
+        case .emailInUseSuggestSignIn(email: _):
             return actionType == .signIn
         }
     }

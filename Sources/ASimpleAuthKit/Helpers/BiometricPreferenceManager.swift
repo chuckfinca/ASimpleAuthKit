@@ -1,17 +1,15 @@
 import Foundation
 import Security
 
-/// Manages per-device biometric authentication preferences
-/// This is separate from user session management and persists across sign-outs
 @MainActor
 public class BiometricPreferenceManager {
 
     // MARK: - Singleton
-    public static let shared = BiometricPreferenceManager(keychainAccessGroup: nil) // Call the designated init
+    public static let shared = BiometricPreferenceManager(keychainAccessGroup: nil)
 
     // MARK: - Private Properties
     private let service: String
-    private let keychainAccessGroup: String? // This will now be set correctly
+    private let keychainAccessGroup: String?
 
     // Keychain keys
     private enum KeychainKey {
@@ -21,11 +19,9 @@ public class BiometricPreferenceManager {
 
     // MARK: - Initialization
 
-    // This is now the designated initializer
-    // Made internal so it can be called by `shared` (within the same module)
-    // and by the public convenience init.
+    // Designated initializer
     internal init(keychainAccessGroup: String?) {
-        self.keychainAccessGroup = keychainAccessGroup // Set the access group first
+        self.keychainAccessGroup = keychainAccessGroup
 
         // Determine the service name. For BiometricPreferenceManager, the service name
         // was originally derived solely from the bundle ID, not affected by the access group.
@@ -42,28 +38,23 @@ public class BiometricPreferenceManager {
 
     // MARK: - Public Interface
 
-    /// Check if biometric authentication is enabled for this device
     public var isBiometricEnabled: Bool {
         get async {
             return await getBoolValue(for: KeychainKey.biometricEnabled) ?? false
         }
     }
 
-    /// Enable or disable biometric authentication for this device
     public func setBiometricEnabled(_ enabled: Bool) async {
         await setBoolValue(enabled, for: KeychainKey.biometricEnabled)
         print("BiometricPreferenceManager: Biometric enabled set to \(enabled)")
     }
 
-    /// Get the last user ID that was authenticated with biometrics
-    /// This is used to ensure biometrics only work for the expected user
     public var lastAuthenticatedUserID: String? {
         get async {
             return await getStringValue(for: KeychainKey.lastAuthenticatedUserID)
         }
     }
 
-    /// Set the last user ID that authenticated with biometrics
     public func setLastAuthenticatedUserID(_ userID: String?) async {
         if let userID = userID {
             await setStringValue(userID, for: KeychainKey.lastAuthenticatedUserID)
@@ -73,8 +64,6 @@ public class BiometricPreferenceManager {
         print("BiometricPreferenceManager: Last authenticated user ID set to \(userID ?? "nil")")
     }
 
-    /// Check if biometric authentication should be required for a specific user
-    /// Returns true if biometrics are enabled AND the user ID matches the last authenticated user
     public func shouldRequireBiometrics(for userID: String) async -> Bool {
         let isEnabled = await isBiometricEnabled
         let lastUserID = await lastAuthenticatedUserID
@@ -84,15 +73,12 @@ public class BiometricPreferenceManager {
         return shouldRequire
     }
 
-    /// Clear all biometric preferences (useful for sign-out or reset scenarios)
     public func clearAllPreferences() async {
         await removeValue(for: KeychainKey.biometricEnabled)
         await removeValue(for: KeychainKey.lastAuthenticatedUserID)
         print("BiometricPreferenceManager: Cleared all preferences")
     }
 
-    /// Update preferences after successful biometric authentication
-    /// This ensures the user ID is current and biometrics remain enabled
     public func recordSuccessfulBiometricAuth(for userID: String) async {
         await setBiometricEnabled(true)
         await setLastAuthenticatedUserID(userID)
@@ -108,7 +94,7 @@ public class BiometricPreferenceManager {
             kSecAttrAccount as String: key
         ]
 
-        if let accessGroup = keychainAccessGroup { // This will now correctly use the instance property
+        if let accessGroup = keychainAccessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
@@ -126,8 +112,6 @@ public class BiometricPreferenceManager {
     }
 
     private func setStringValue(_ value: String, for key: String) async {
-        // Task.detached closure captures `self.service` and `self.keychainAccessGroup`
-        // which are now correctly initialized.
         await Task.detached { [service = self.service, keychainAccessGroup = self.keychainAccessGroup] in
             guard let data = value.data(using: .utf8) else {
                 print("BiometricPreferenceManager: Failed to encode value for key \(key)")
@@ -180,7 +164,7 @@ public class BiometricPreferenceManager {
 
             if status == errSecSuccess {
                 guard let data = dataTypeRef as? Data,
-                      let value = String(data: data, encoding: .utf8) else {
+                    let value = String(data: data, encoding: .utf8) else {
                     print("BiometricPreferenceManager: Failed to decode value for key \(key)")
                     return nil
                 }
