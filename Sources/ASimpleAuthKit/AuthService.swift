@@ -367,6 +367,13 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         self.lastError = error
 
         switch error {
+        case .emailAlreadyInUseDuringCreation(let email):
+            print("AuthService: Email \(email) is already in use from a creation attempt. Suggesting sign-in.")
+            self.lastError = error // Set the specific error
+            self.emailForLinking = email // Can still be used to pre-fill email field for sign-in attempts
+            self.pendingCredentialToLinkAfterReauth = nil // CRITICAL: No social/apple credential to link here
+            setState(.emailInUseSuggestSignIn(email: email))
+
         case .accountLinkingRequired(let email, let attemptedProviderIdFromError):
             self.pendingCredentialToLinkAfterReauth = self.firebaseAuthenticator.pendingCredentialForLinking
             self.emailForLinking = email
@@ -569,6 +576,8 @@ fileprivate extension AuthState {
             return actionType == .signIn
         case .authenticating, .signedIn:
             return false
+        case .emailInUseSuggestSignIn(email: let email):
+            return actionType == .signIn
         }
     }
 }

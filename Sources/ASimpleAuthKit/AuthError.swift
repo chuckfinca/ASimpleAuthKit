@@ -25,12 +25,13 @@ public enum AuthError: Error, Equatable, Sendable {
     case firebaseAuthError(FirebaseErrorData)
     case accountLinkingError(String)
     case mergeConflictError(String)
-    case accountLinkingRequired(email: String, attemptedProviderId: String?)
+    case accountLinkingRequired(email: String, attemptedProviderId: String?)// For 17008 from signIn
     case missingLinkingInfo
     case providerSpecificError(provider: String, underlyingError: FirebaseErrorData?)
     case reauthenticationRequired(providerId: String?)
     case helpfulInvalidCredential(email: String)
     case helpfulUserNotFound(email: String)
+    case emailAlreadyInUseDuringCreation(email: String) // Specific for 17007 from createUser
 
 
     public static func == (lhs: AuthError, rhs: AuthError) -> Bool {
@@ -54,6 +55,8 @@ public enum AuthError: Error, Equatable, Sendable {
         case (.helpfulInvalidCredential(let lEmail), .helpfulInvalidCredential(let rEmail)):
             return lEmail == rEmail
         case (.helpfulUserNotFound(let lEmail), .helpfulUserNotFound(let rEmail)):
+            return lEmail == rEmail
+        case (.emailAlreadyInUseDuringCreation(let lEmail), .emailAlreadyInUseDuringCreation(let rEmail)): // ADD THIS CASE
             return lEmail == rEmail
         default: return false
         }
@@ -142,11 +145,13 @@ public enum AuthError: Error, Equatable, Sendable {
             return baseMessage
         case .reauthenticationRequired:
             return "Reauthentication required. App UI needs to handle this flow."
-        case .helpfulInvalidCredential(let email):
+        case .helpfulInvalidCredential(_):
             return "We couldn't sign you in with that password. You might have created your account using Google, Apple, or a different password. Try signing in with Google or Apple, or use 'Forgot Password' if you signed up with email."
 
         case .helpfulUserNotFound(let email):
             return "No account found for \(email). You can create a new account, or try signing in with Google or Apple if you've used those before."
+        case .emailAlreadyInUseDuringCreation(email: let email):
+            return "The email address '\(email)' is already associated with an account. Please try signing in. You may have previously used Google, Apple, or set a different password with this email."
         }
     }
 

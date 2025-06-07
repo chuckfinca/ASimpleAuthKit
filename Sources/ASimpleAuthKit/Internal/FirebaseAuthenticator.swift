@@ -46,7 +46,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             return user
         } catch {
             print("FirebaseAuthenticator: Email/Password sign-in failed: \(error.localizedDescription)")
-            throw processFirebaseError(error)
+            throw processFirebaseError(error, emailForContext: email)
         }
     }
 
@@ -69,7 +69,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             return user
         } catch {
             print("FirebaseAuthenticator: Email/Password account creation failed: \(error.localizedDescription)")
-            throw processFirebaseError(error)
+            throw processFirebaseError(error, emailForContext: email)
         }
     }
 
@@ -92,9 +92,9 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             // For now, we'll rethrow it as a generic AuthError.makeFirebaseAuthError.
             throw AuthError.makeFirebaseAuthError(error)
         }
-        
+
         // TODO: Refine error handling for sendEmailVerification specific errors
-        // For example, AuthErrorCode.tooManyRequests 
+        // For example, AuthErrorCode.tooManyRequests
     }
 
     func sendPasswordResetEmail(to email: String) async throws {
@@ -155,7 +155,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                         continuation.resume(returning: authUser)
                     } catch {
                         print("FirebaseAuthenticator: Firebase sign-in with Google credential failed: \(error.localizedDescription)")
-                        continuation.resume(throwing: self.processFirebaseError(error, attemptedCredential: credential, email: user.profile?.email))
+                        continuation.resume(throwing: self.processFirebaseError(error, attemptedCredential: credential, emailForContext: user.profile?.email))
                     }
                 }
             }
@@ -237,7 +237,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 continuation.resume(returning: user)
             } catch {
                 print("FirebaseAuthenticator: Firebase sign-in with Apple credential failed: \(error.localizedDescription)")
-                continuation.resume(throwing: self.processFirebaseError(error, attemptedCredential: firebaseCredential, email: appleIDCredential.email))
+                continuation.resume(throwing: self.processFirebaseError(error, attemptedCredential: firebaseCredential, emailForContext: appleIDCredential.email))
             }
         }
     }
@@ -295,9 +295,9 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         // The AuthService will save the user ID after successful authentication
     }
 
-    private func processFirebaseError(_ error: Error, attemptedCredential: AuthCredential? = nil, email: String? = nil) -> AuthError {
+    private func processFirebaseError(_ error: Error, attemptedCredential: AuthCredential? = nil, emailForContext: String? = nil) -> AuthError {
         let nsError = error as NSError
-        print("FirebaseAuthenticator: Processing Firebase error - Domain: \(nsError.domain), Code: \(nsError.code), Email: \(email ?? "N/A")")
+        print("FirebaseAuthenticator: Processing Firebase error - Domain: \(nsError.domain), Code: \(nsError.code), Email: \(emailForContext ?? "N/A")")
 
         if nsError.domain == AuthErrorDomain {
             switch nsError.code {
@@ -307,7 +307,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     if let userInfoEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String, !userInfoEmail.isEmpty {
                         return userInfoEmail
                     }
-                    if let providedEmail = email, !providedEmail.isEmpty {
+                    if let providedEmail = emailForContext, !providedEmail.isEmpty {
                         return providedEmail
                     }
                     // If we still don't have an email, this is a configuration issue
@@ -327,19 +327,10 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 }
 
             case AuthErrorCode.emailAlreadyInUse.rawValue:
-                let conflictingEmail: String = {
-                    if let userInfoEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String, !userInfoEmail.isEmpty {
-                        return userInfoEmail
-                    }
-                    if let providedEmail = email, !providedEmail.isEmpty {
-                        return providedEmail
-                    }
-                    return "Please try again"
-                }()
-
-                print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (likely from create user). Suggesting linking.")
-                self.pendingCredentialForLinking = nil
-                return .accountLinkingRequired(email: conflictingEmail, attemptedProviderId: attemptedCredential?.provider)
+                let conflictingEmail = emailForContext ?? "The provided email" // Should have emailForContext
+                print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (from createUser).")
+                self.pendingCredentialForLinking = nil // Ensure no credential is considered pending for this error
+                return .emailAlreadyInUseDuringCreation(email: conflictingEmail)
 
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
@@ -349,11 +340,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
             case AuthErrorCode.invalidCredential.rawValue:
                 print("FirebaseAuthenticator: Invalid credential error - providing helpful guidance.")
-                return .helpfulInvalidCredential(email: email ?? "unknown")
+                return .helpfulInvalidCredential(email: emailForContext ?? "unknown")
 
             case AuthErrorCode.userNotFound.rawValue:
                 print("FirebaseAuthenticator: User not found - providing helpful guidance.")
-                return .helpfulUserNotFound(email: email ?? "unknown")
+                return .helpfulUserNotFound(email: emailForContext ?? "unknown")
 
             default:
                 return AuthError.makeFirebaseAuthError(error)

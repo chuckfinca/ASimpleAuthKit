@@ -47,6 +47,7 @@ public enum AuthState: Equatable, Sendable {
     case requiresBiometrics
     case signedIn(AuthUser)
     case requiresAccountLinking(email: String, attemptedProviderId: String?)
+    case emailInUseSuggestSignIn(email: String)
     case requiresMergeConflictResolution
 
     public static func == (lhs: AuthState, rhs: AuthState) -> Bool {
@@ -67,18 +68,29 @@ public enum AuthState: Equatable, Sendable {
         if case .authenticating = self { return true }
         return false
     }
-
-    public var allowsSignInAttempt: Bool {
-        switch self {
-        case .signedOut, .requiresBiometrics, .requiresAccountLinking, .requiresMergeConflictResolution: return true
-        case .authenticating, .signedIn: return false
-        }
-    }
+//
+//    public var allowsSignInAttempt: Bool {
+//        switch self {
+//        case .signedOut, .requiresBiometrics, .requiresAccountLinking, .emailInUseSuggestSignIn, .requiresMergeConflictResolution: return true
+//        case .authenticating, .signedIn: return false
+//        }
+//    }
 
     public var isPendingResolution: Bool {
         switch self {
         case .requiresAccountLinking, .requiresMergeConflictResolution: return true
         default: return false
         }
+    }
+
+    public var isSignedIn: Bool {
+        if case .signedIn = self {
+            return true
+        }
+        return false
+    }
+
+    public var isSignedOut: Bool {
+        return self == .signedOut
     }
 }
