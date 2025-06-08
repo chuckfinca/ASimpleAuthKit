@@ -3,9 +3,9 @@ import Combine
 import UIKit
 import XCTest
 import FirebaseAuth
-@testable import ASimpleAuthKit // For internal types like AuthUser internal init
+@testable import ASimpleAuthKit
 
-// MARK: - MockSecureStorage (Largely Unchanged, ensure it's up-to-date from previous context)
+// MARK: - MockSecureStorage
 @MainActor
 class MockSecureStorage: SecureStorageProtocol {
     var storage: [String: String] = [:]
@@ -56,7 +56,7 @@ class MockSecureStorage: SecureStorageProtocol {
     }
 }
 
-// MARK: - MockBiometricAuthenticator (Largely Unchanged, ensure it's up-to-date)
+// MARK: - MockBiometricAuthenticator
 @MainActor
 class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     var mockIsAvailable = true
@@ -82,226 +82,258 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     }
 }
 
-// MARK: - MockFirebaseAuthenticator (Significant Updates)
+// MARK: - MockFirebaseAuthenticator
 @MainActor
 class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
-
-    // --- Configuration & Dependencies (if needed by mock logic) ---
-    // let config: AuthConfig // Not strictly needed by mock if not using its properties
-    // let secureStorage: SecureStorageProtocol // Not strictly needed by mock
-
-    // --- Mock Control Properties for each method ---
     var signInWithEmailResultProvider: ((String, String) -> Result<AuthUser, AuthError>)?
     var createAccountWithEmailResultProvider: ((String, String, String?) -> Result<AuthUser, AuthError>)?
     var signInWithGoogleResultProvider: ((UIViewController) -> Result<AuthUser, AuthError>)?
     var signInWithAppleResultProvider: ((UIViewController, String) -> Result<AuthUser, AuthError>)?
     var sendPasswordResetEmailError: AuthError?
     var linkCredentialResultProvider: ((AuthCredential, FirebaseAuth.User) -> Result<AuthUser, AuthError>)?
+    var sendEmailVerificationError: AuthError?
 
-    // --- Stored credentials for inspection / linking flow simulation ---
     private(set) var pendingCredentialForLinking: AuthCredential?
 
-
-    // --- Call Tracking ---
     var signInWithEmailCallCount = 0
     var createAccountWithEmailCallCount = 0
     var signInWithGoogleCallCount = 0
     var signInWithAppleCallCount = 0
     var sendPasswordResetEmailCallCount = 0
+    var sendEmailVerificationCallCount = 0
     var linkCredentialCallCount = 0
     var clearTemporaryCredentialsCallCount = 0
 
-    var lastEmailForSignIn: String?
-    var lastPasswordForSignIn: String?
-    var lastDisplayNameForCreate: String?
-    var lastPresentingVCForGoogle: UIViewController?
-    var lastPresentingVCForApple: UIViewController?
-    var lastRawNonceForApple: String?
-    var lastEmailForPasswordReset: String?
-    var lastCredentialLinked: AuthCredential?
-    var lastUserForLinking: FirebaseAuth.User?
-
-
-    // --- Initialization ---
-    // init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
-    //     self.config = config
-    //     self.secureStorage = secureStorage
-    // }
-    // Simplified init if config/storage not directly used by mock logic
     init() { }
-
-
-    // --- Protocol Methods Implementation ---
 
     func signInWithEmail(email: String, password: String) async throws -> AuthUser {
         signInWithEmailCallCount += 1
-        lastEmailForSignIn = email
-        lastPasswordForSignIn = password
-        print("MockFirebaseAuthenticator: signInWithEmail called for \(email).")
-        guard let provider = signInWithEmailResultProvider else {
-            XCTFail("MockFirebaseAuthenticator: signInWithEmailResultProvider not set.")
-            throw AuthError.unknown // Should not happen in a well-written test
-        }
-        let result = provider(email, password)
-        return try processMockResult(result)
+        guard let provider = signInWithEmailResultProvider else { XCTFail("signInWithEmailResultProvider not set."); throw AuthError.unknown }
+        return try processMockResult(provider(email, password))
     }
 
     func createAccountWithEmail(email: String, password: String, displayName: String?) async throws -> AuthUser {
         createAccountWithEmailCallCount += 1
-        lastEmailForSignIn = email // Re-use for simplicity
-        lastPasswordForSignIn = password
-        lastDisplayNameForCreate = displayName
-        print("MockFirebaseAuthenticator: createAccountWithEmail called for \(email).")
-        guard let provider = createAccountWithEmailResultProvider else {
-            XCTFail("MockFirebaseAuthenticator: createAccountWithEmailResultProvider not set.")
-            throw AuthError.unknown
-        }
-        let result = provider(email, password, displayName)
-        return try processMockResult(result)
+        guard let provider = createAccountWithEmailResultProvider else { XCTFail("createAccountWithEmailResultProvider not set."); throw AuthError.unknown }
+        return try processMockResult(provider(email, password, displayName))
     }
 
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         signInWithGoogleCallCount += 1
-        lastPresentingVCForGoogle = presentingViewController
-        print("MockFirebaseAuthenticator: signInWithGoogle called.")
-        guard let provider = signInWithGoogleResultProvider else {
-            XCTFail("MockFirebaseAuthenticator: signInWithGoogleResultProvider not set.")
-            throw AuthError.unknown
-        }
-        let result = provider(presentingViewController)
-        return try processMockResult(result)
+        guard let provider = signInWithGoogleResultProvider else { XCTFail("signInWithGoogleResultProvider not set."); throw AuthError.unknown }
+        return try processMockResult(provider(presentingViewController))
     }
 
     func signInWithApple(presentingViewController: UIViewController, rawNonce: String) async throws -> AuthUser {
         signInWithAppleCallCount += 1
-        lastPresentingVCForApple = presentingViewController
-        lastRawNonceForApple = rawNonce
-        print("MockFirebaseAuthenticator: signInWithApple called with nonce.")
-        guard let provider = signInWithAppleResultProvider else {
-            XCTFail("MockFirebaseAuthenticator: signInWithAppleResultProvider not set.")
-            throw AuthError.unknown
-        }
-        let result = provider(presentingViewController, rawNonce)
-        return try processMockResult(result)
+        guard let provider = signInWithAppleResultProvider else { XCTFail("signInWithAppleResultProvider not set."); throw AuthError.unknown }
+        return try processMockResult(provider(presentingViewController, rawNonce))
+    }
+    
+    func sendEmailVerification(to firebaseUser: User) async throws {
+        sendEmailVerificationCallCount += 1
+        if let error = sendEmailVerificationError { throw error }
     }
 
     func sendPasswordResetEmail(to email: String) async throws {
         sendPasswordResetEmailCallCount += 1
-        lastEmailForPasswordReset = email
-        print("MockFirebaseAuthenticator: sendPasswordResetEmail called for \(email).")
-        if let error = sendPasswordResetEmailError {
-            throw error
-        }
-        // No return value for success
+        if let error = sendPasswordResetEmailError { throw error }
     }
 
     func linkCredential(_ credentialToLink: AuthCredential, to user: FirebaseAuth.User) async throws -> AuthUser {
         linkCredentialCallCount += 1
-        lastCredentialLinked = credentialToLink
-        lastUserForLinking = user
-        print("MockFirebaseAuthenticator: linkCredential called for user \(user.uid) with provider \(credentialToLink.provider).")
-        guard let provider = linkCredentialResultProvider else {
-            XCTFail("MockFirebaseAuthenticator: linkCredentialResultProvider not set.")
-            throw AuthError.unknown
-        }
-        let result = provider(credentialToLink, user)
-        return try processMockResult(result, isLinking: true) // Pass isLinking context
-    }
-
-    func forcePendingCredentialForLinking(_ cred: AuthCredential?) {
-        self.pendingCredentialForLinking = cred
-        print("MockFirebaseAuthenticator: Forced pendingCredentialForLinking.")
-    }
-
-    private func processMockResult(_ result: Result<AuthUser, AuthError>, isLinking: Bool = false) throws -> AuthUser {
-        switch result {
-        case .success(let user):
-            print("MockFirebaseAuthenticator: Result is success for user \(user.uid)")
-            if !isLinking {
-                // If this was a successful sign-in (not a link operation itself),
-                // and it wasn't a re-auth for linking, clear any mock pending credential.
-                // AuthService handles its own pendingCredentialToLinkAfterReauth.
-                // This mock's pendingCredentialForLinking is mainly for simulating what
-                // a real FirebaseAuthenticator would store *before* throwing an accountLinkingRequired error.
-            }
-            return user
-        case .failure(let error):
-            print("MockFirebaseAuthenticator: Result is failure: \(error.localizedDescription)")
-            // The mock no longer needs to manipulate its pendingCredentialForLinking based on the error type here.
-            // It's set by forcePendingCredentialForLinking or when its *own* methods (like signInWithAppleResultProvider)
-            // are configured to simulate the storing of a credential before throwing the error.
-            throw error
-        }
+        guard let provider = linkCredentialResultProvider else { XCTFail("linkCredentialResultProvider not set."); throw AuthError.unknown }
+        return try processMockResult(provider(credentialToLink, user))
     }
 
     func clearTemporaryCredentials() {
         clearTemporaryCredentialsCallCount += 1
         pendingCredentialForLinking = nil
-        print("MockFirebaseAuthenticator: clearTemporaryCredentials called. Mock's pending cred cleared.")
+    }
+    
+    func forcePendingCredentialForLinking(_ cred: AuthCredential?) {
+        self.pendingCredentialForLinking = cred
     }
 
-    func sendEmailVerification(to firebaseUser: User) async throws { }
+    private func processMockResult(_ result: Result<AuthUser, AuthError>) throws -> AuthUser {
+        switch result {
+        case .success(let user): return user
+        case .failure(let error): throw error
+        }
+    }
 
-    // --- Mock Reset and Helper ---
     func reset() {
-        signInWithEmailResultProvider = nil
-        createAccountWithEmailResultProvider = nil
-        signInWithGoogleResultProvider = nil
-        signInWithAppleResultProvider = nil
-        sendPasswordResetEmailError = nil
-        linkCredentialResultProvider = nil
-
+        signInWithEmailResultProvider = nil; createAccountWithEmailResultProvider = nil; signInWithGoogleResultProvider = nil; signInWithAppleResultProvider = nil; sendPasswordResetEmailError = nil; linkCredentialResultProvider = nil; sendEmailVerificationError = nil
         pendingCredentialForLinking = nil
-
-        signInWithEmailCallCount = 0
-        createAccountWithEmailCallCount = 0
-        signInWithGoogleCallCount = 0
-        signInWithAppleCallCount = 0
-        sendPasswordResetEmailCallCount = 0
-        linkCredentialCallCount = 0
-        clearTemporaryCredentialsCallCount = 0
-
-        lastEmailForSignIn = nil; lastPasswordForSignIn = nil; lastDisplayNameForCreate = nil
-        lastPresentingVCForGoogle = nil; lastPresentingVCForApple = nil; lastRawNonceForApple = nil
-        lastEmailForPasswordReset = nil; lastCredentialLinked = nil; lastUserForLinking = nil
-        print("MockFirebaseAuthenticator: Reset.")
+        signInWithEmailCallCount = 0; createAccountWithEmailCallCount = 0; signInWithGoogleCallCount = 0; signInWithAppleCallCount = 0; sendPasswordResetEmailCallCount = 0; linkCredentialCallCount = 0; clearTemporaryCredentialsCallCount = 0; sendEmailVerificationCallCount = 0
     }
 }
 
+// MARK: - MockFirebaseAuthClient
+@MainActor
+class MockFirebaseAuthClient: FirebaseAuthClientProtocol {
+    var mockCurrentUser: FirebaseAuth.User?
+    var mockSignOutError: Error?
+    var mockSignInWithEmailResult: Result<AuthDataResult, Error>?
+    var mockCreateUserResult: Result<AuthDataResult, Error>?
+    var mockSendEmailVerificationError: Error?
+    var mockSendPasswordResetError: Error?
+    var mockSignInWithCredentialResult: Result<AuthDataResult, Error>?
+    var mockLinkCredentialResult: Result<AuthDataResult, Error>?
 
-// MARK: - Test Helpers (createDummyUser, DummyViewController, TestError)
-// (Ensure these are present and up-to-date from previous context if not included here)
-// Helper to create a dummy user using the internal initializer
-func createDummyUser(uid: String = "dummyUID", email: String? = "dummy@test.com", displayName: String? = "Dummy", isAnonymous: Bool = false, providerID: String? = "password") -> AuthUser {
+    var signOutCallCount = 0
+    var addStateDidChangeListenerCallCount = 0
+    var removeStateDidChangeListenerCallCount = 0
+    
+    private var listeners: [Int: (FirebaseAuth.Auth, FirebaseAuth.User?) -> Void] = [:]
+    private var nextListenerHandle: Int = 0
+
+    var currentUser: FirebaseAuth.User? { mockCurrentUser }
+
+    func addStateDidChangeListener(_ listener: @escaping (FirebaseAuth.Auth, FirebaseAuth.User?) -> Void) -> AuthStateDidChangeListenerHandle {
+        addStateDidChangeListenerCallCount += 1
+        let handle = nextListenerHandle
+        listeners[handle] = listener
+        nextListenerHandle += 1
+        return handle as AuthStateDidChangeListenerHandle
+    }
+
+    func removeStateDidChangeListener(_ handle: AuthStateDidChangeListenerHandle) {
+        removeStateDidChangeListenerCallCount += 1
+        listeners.removeValue(forKey: handle as! Int)
+    }
+
+    func signOut() throws {
+        signOutCallCount += 1
+        if let error = mockSignOutError { throw error }
+        mockCurrentUser = nil
+        simulateAuthStateChange(to: nil)
+    }
+    
+    func simulateAuthStateChange(to user: FirebaseAuth.User?) {
+        mockCurrentUser = user
+        for listener in listeners.values {
+            listener(Auth.auth(), user) // Pass dummy Auth.auth() object
+        }
+    }
+
+    func signIn(withEmail email: String, password: String) async throws -> AuthDataResult {
+        guard let result = mockSignInWithEmailResult else { XCTFail("mockSignInWithEmailResult not set."); throw AuthError.unknown }
+        return try result.get()
+    }
+
+    func createUser(withEmail email: String, password: String) async throws -> AuthDataResult {
+        guard let result = mockCreateUserResult else { XCTFail("mockCreateUserResult not set."); throw AuthError.unknown }
+        return try result.get()
+    }
+    
+    func sendEmailVerification(for user: FirebaseAuth.User) async throws {
+        if let error = mockSendEmailVerificationError { throw error }
+    }
+
+    func sendPasswordReset(withEmail email: String) async throws {
+        if let error = mockSendPasswordResetError { throw error }
+    }
+
+    func signIn(with credential: AuthCredential) async throws -> AuthDataResult {
+        guard let result = mockSignInWithCredentialResult else { XCTFail("mockSignInWithCredentialResult not set."); throw AuthError.unknown }
+        return try result.get()
+    }
+
+    func link(user: FirebaseAuth.User, with credential: AuthCredential) async throws -> AuthDataResult {
+        guard let result = mockLinkCredentialResult else { XCTFail("mockLinkCredentialResult not set."); throw AuthError.unknown }
+        return try result.get()
+    }
+
+    func reset() {
+        mockCurrentUser = nil; mockSignOutError = nil; listeners.removeAll(); nextListenerHandle = 0; signOutCallCount = 0; addStateDidChangeListenerCallCount = 0; removeStateDidChangeListenerCallCount = 0
+        mockSignInWithEmailResult = nil; mockCreateUserResult = nil; mockSendEmailVerificationError = nil; mockSendPasswordResetError = nil; mockSignInWithCredentialResult = nil; mockLinkCredentialResult = nil
+    }
+}
+
+// MARK: - Test Helpers
+func createDummyAuthUser(uid: String = "dummyUID", email: String? = "dummy@test.com", displayName: String? = "Dummy", isAnonymous: Bool = false, providerID: String? = "password") -> AuthUser {
     return AuthUser(uid: uid, email: email, displayName: displayName, isAnonymous: isAnonymous, providerID: providerID)
 }
 
-// Dummy VC for presenting calls
+func createDummyFirebaseUser(uid: String = "dummyUID", email: String? = "dummy@test.com", displayName: String? = "Dummy", isAnonymous: Bool = false, providerID: String? = "password") -> FirebaseAuth.User {
+    return MockFirebaseUser(uid: uid, email: email, displayName: displayName, isAnonymous: isAnonymous, providerID: providerID).asFirebaseAuthUser()
+}
+
 class DummyViewController: UIViewController { }
 
-// Define TestError used in tests
 enum TestError: Error, LocalizedError {
     case unexpectedState(String)
-    case timeout(String)
-    case testSetupFailed(String)
+}
 
-    var errorDescription: String? {
-        switch self {
-        case .unexpectedState(let msg): return "TestError: Unexpected State - \(msg)"
-        case .timeout(let msg): return "TestError: Asynchronous operation timed out waiting for: \(msg)."
-        case .testSetupFailed(let msg): return "TestError: Test setup failed - \(msg)"
-        }
+func createPlaceholderAuthCredential(providerID: String = "password") -> AuthCredential {
+    switch providerID {
+    case "google.com": return GoogleAuthProvider.credential(withIDToken: "dummyGoogleIDToken", accessToken: "dummyGoogleAccessToken")
+    case "apple.com": return OAuthProvider.appleCredential(withIDToken: "dummyAppleIDToken", rawNonce: "dummyRawNonce", fullName: nil)
+    default: return EmailAuthProvider.credential(withEmail: "test@example.com", password: "password")
     }
 }
 
-// Helper to create a placeholder AuthCredential for testing
-func createPlaceholderAuthCredential(providerID: String = "password") -> AuthCredential {
-    switch providerID {
-    case "google.com":
-        return GoogleAuthProvider.credential(withIDToken: "dummyGoogleIDToken", accessToken: "dummyGoogleAccessToken")
-    case "apple.com":
-        return OAuthProvider.appleCredential(withIDToken: "dummyAppleIDToken", rawNonce: "dummyRawNonce", fullName: nil)
-    default: // password
-        return EmailAuthProvider.credential(withEmail: "test@example.com", password: "password")
+private class MockFirebaseUser: NSObject {
+    // Store properties to return
+    private let _uid: String
+    private let _email: String?
+    private let _displayName: String?
+    private let _isAnonymous: Bool
+    private let _providerData: [MockUserInfo]
+    
+    init(uid: String, email: String?, displayName: String?, isAnonymous: Bool, providerID: String?) {
+        self._uid = uid
+        self._email = email
+        self._displayName = displayName
+        self._isAnonymous = isAnonymous
+        self._providerData = [MockUserInfo(providerID: providerID ?? "")]
     }
+
+    // Use Obj-C runtime exposure to pretend to be a FirebaseAuth.User
+    // This avoids subclassing/override issues and is a common mocking technique.
+    override func responds(to aSelector: Selector!) -> Bool {
+        // This makes our mock "claim" it can respond to any selector from User
+        if super.responds(to: aSelector) { return true }
+        return aSelector == #selector(getter: User.uid) ||
+               aSelector == #selector(getter: User.email) ||
+               aSelector == #selector(getter: User.displayName) ||
+               aSelector == #selector(getter: User.isAnonymous) ||
+               aSelector == #selector(getter: User.providerData)
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        // This is a simplified way to redirect calls. For simple property getters,
+        // we can just return our mock object itself and use @objc properties.
+        return self
+    }
+
+    // Expose properties to the Objective-C runtime using @objc
+    @objc var uid: String { _uid }
+    @objc var email: String? { _email }
+    @objc var displayName: String? { _displayName }
+    @objc var isAnonymous: Bool { _isAnonymous }
+    @objc var providerData: [MockUserInfo] { _providerData }
+}
+
+extension MockFirebaseUser {
+    func asFirebaseAuthUser() -> User {
+        return unsafeBitCast(self, to: User.self)
+    }
+}
+
+private class MockUserInfo: NSObject, UserInfo {
+    private let _providerID: String
+    
+    init(providerID: String) {
+        self._providerID = providerID
+    }
+    
+    // Expose properties to Objective-C runtime
+    @objc var providerID: String { _providerID }
+    @objc var uid: String { "mock-provider-uid" } // Provide a default
+    @objc var displayName: String? { nil }
+    @objc var email: String? { nil }
+    @objc var phoneNumber: String? { nil }
+    @objc var photoURL: URL? { nil }
 }

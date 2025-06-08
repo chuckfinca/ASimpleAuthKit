@@ -11,6 +11,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
     private let config: AuthConfig
     private let secureStorage: SecureStorageProtocol
+    private let firebaseAuthClient: FirebaseAuthClientProtocol
 
     // For Apple Sign In
     private var currentAppleSignInContinuation: CheckedContinuation<AuthUser, Error>?
@@ -22,9 +23,10 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     // Stores the credential the user just attempted if Firebase returns "accountExistsWithDifferentCredential"
     private(set) var pendingCredentialForLinking: AuthCredential?
 
-    internal init(config: AuthConfig, secureStorage: SecureStorageProtocol) {
+    internal init(config: AuthConfig, secureStorage: SecureStorageProtocol, firebaseAuthClient: FirebaseAuthClientProtocol) {
         self.config = config
         self.secureStorage = secureStorage
+        self.firebaseAuthClient = firebaseAuthClient
         super.init()
         print("FirebaseAuthenticator: Initialized.")
     }
@@ -40,7 +42,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func signInWithEmail(email: String, password: String) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Email/Password sign-in for \(email)")
         do {
-            let authDataResult = try await Auth.auth().signIn(withEmail: email, password: password)
+            let authDataResult = try await self.firebaseAuthClient.signIn(withEmail: email, password: password)
             let user = AuthUser(firebaseUser: authDataResult.user)
             await handleSuccessfulAuth(for: user, fromProvider: "Email/Password")
             return user
@@ -53,12 +55,12 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func createAccountWithEmail(email: String, password: String, displayName: String?) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Email/Password account creation for \(email)")
         do {
-            let authDataResult = try await Auth.auth().createUser(withEmail: email, password: password)
+            let authDataResult = try await self.firebaseAuthClient.createUser(withEmail: email, password: password)
             if let displayName = displayName, !displayName.isEmpty {
                 let changeRequest = authDataResult.user.createProfileChangeRequest()
                 changeRequest.displayName = displayName
                 try await changeRequest.commitChanges()
-                if let updatedFirebaseUser = Auth.auth().currentUser {
+                if let updatedFirebaseUser = self.firebaseAuthClient.currentUser {
                     let user = AuthUser(firebaseUser: updatedFirebaseUser)
                     await handleSuccessfulAuth(for: user, fromProvider: "Email/Password (Create)")
                     return user
@@ -81,21 +83,18 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
         print("FirebaseAuthenticator: Attempting to send email verification to user \(firebaseUser.uid) (\(firebaseUser.email ?? "N/A")).")
         do {
-            try await firebaseUser.sendEmailVerification()
+            try await self.firebaseAuthClient.sendEmailVerification(for: firebaseUser)
             print("FirebaseAuthenticator: Email verification sent successfully.")
         } catch {
             print("FirebaseAuthenticator: Sending email verification failed: \(error.localizedDescription)")
             throw AuthError.makeFirebaseAuthError(error)
         }
-
-        // TODO: Refine error handling for sendEmailVerification specific errors
-        // For example, AuthErrorCode.tooManyRequests
     }
 
     func sendPasswordResetEmail(to email: String) async throws {
         print("FirebaseAuthenticator: Sending password reset email to \(email)")
         do {
-            try await Auth.auth().sendPasswordReset(withEmail: email)
+            try await self.firebaseAuthClient.sendPasswordReset(withEmail: email)
             print("FirebaseAuthenticator: Password reset email sent successfully.")
         } catch {
             print("FirebaseAuthenticator: Sending password reset email failed: \(error.localizedDescription)")
@@ -144,7 +143,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
 
                 Task { @MainActor in
                     do {
-                        let authDataResult = try await Auth.auth().signIn(with: credential)
+                        let authDataResult = try await self.firebaseAuthClient.signIn(with: credential)
                         let authUser = AuthUser(firebaseUser: authDataResult.user)
                         await self.handleSuccessfulAuth(for: authUser, fromProvider: "Google")
                         continuation.resume(returning: authUser)
@@ -224,7 +223,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
             let appleUserID = appleIDCredential.user
 
             do {
-                let authDataResult = try await Auth.auth().signIn(with: firebaseCredential)
+                let authDataResult = try await self.firebaseAuthClient.signIn(with: firebaseCredential)
                 let user = AuthUser(firebaseUser: authDataResult.user)
 
                 self.config.appleUserPersister?(appleUserID, user.uid)
@@ -270,7 +269,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func linkCredential(_ credentialToLink: AuthCredential, to user: FirebaseAuth.User) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting to link new credential to user \(user.uid)")
         do {
-            let authDataResult = try await user.link(with: credentialToLink)
+            let authDataResult = try await self.firebaseAuthClient.link(user: user, with: credentialToLink)
             let updatedUser = AuthUser(firebaseUser: authDataResult.user)
             await handleSuccessfulAuth(for: updatedUser, fromProvider: "Link (\(credentialToLink.provider))")
             return updatedUser
@@ -285,7 +284,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     private func handleSuccessfulAuth(for user: AuthUser, fromProvider: String) async {
         print("FirebaseAuthenticator: Successfully authenticated user \(user.uid) via \(fromProvider).")
         self.pendingCredentialForLinking = nil
-        // The AuthService will save the user ID after successful authentication
     }
 
     private func processFirebaseError(_ error: Error, attemptedCredential: AuthCredential? = nil, emailForContext: String? = nil) -> AuthError {
@@ -295,7 +293,6 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
         if nsError.domain == AuthErrorDomain {
             switch nsError.code {
             case AuthErrorCode.accountExistsWithDifferentCredential.rawValue:
-                // Try multiple sources for the email, prefer non-empty values
                 let conflictingEmail: String = {
                     if let userInfoEmail = nsError.userInfo[AuthErrorUserInfoEmailKey] as? String, !userInfoEmail.isEmpty {
                         return userInfoEmail
@@ -303,9 +300,8 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                     if let providedEmail = emailForContext, !providedEmail.isEmpty {
                         return providedEmail
                     }
-                    // If we still don't have an email, this is a configuration issue
                     print("FirebaseAuthenticator: WARNING - No email available for account linking error")
-                    return "Please try again" // More user-friendly than "unknown"
+                    return "Please try again"
                 }()
 
                 let credentialToStoreForLinking = nsError.userInfo[AuthErrorUserInfoUpdatedCredentialKey] as? AuthCredential ?? attemptedCredential
@@ -320,15 +316,14 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
                 }
 
             case AuthErrorCode.emailAlreadyInUse.rawValue:
-                let conflictingEmail = emailForContext ?? "The provided email" // Should have emailForContext
+                let conflictingEmail = emailForContext ?? "The provided email"
                 print("FirebaseAuthenticator: Email \(conflictingEmail) already in use (from createUser).")
-                self.pendingCredentialForLinking = nil // Ensure no credential is considered pending for this error
+                self.pendingCredentialForLinking = nil
                 return .emailAlreadyInUseDuringCreation(email: conflictingEmail)
-
 
             case AuthErrorCode.credentialAlreadyInUse.rawValue:
                 print("FirebaseAuthenticator: Credential already in use by another account. This could be a merge conflict.")
-                let message = "This sign-in method is already associated with a different user account. Please sign in with that account if you wish to merge, or contact support."
+                let message = "This sign-in method is already associated with a different user account."
                 return .mergeConflictError(message)
 
             case AuthErrorCode.invalidCredential.rawValue:

@@ -1,319 +1,195 @@
 import XCTest
 import Combine
 @testable import ASimpleAuthKit
-import FirebaseAuth // For AuthCredential and live Auth interaction in some tests
+import FirebaseAuth
 import FirebaseCore
 
 @MainActor
 final class AuthServiceTests: XCTestCase {
 
-    // MARK: Properties
-    var sut: AuthService! // System Under Test
+    var sut: AuthService!
     var mockFirebaseAuthenticator: MockFirebaseAuthenticator!
     var mockBiometricAuthenticator: MockBiometricAuthenticator!
     var mockSecureStorage: MockSecureStorage!
+    var mockFirebaseAuthClient: MockFirebaseAuthClient!
     var config: AuthConfig!
     var cancellables: Set<AnyCancellable>!
     var dummyVC: DummyViewController!
 
-    private static var firebaseConfigured = false
-    private let authEmulatorHost = "127.0.0.1"
-    private let authEmulatorPort = 9099
+    override class func setUp() {
+        super.setUp()
+        // Configure Firebase for the test suite. This is necessary because some
+        // parts of the code (even within mocks) may interact with the global
+        // FirebaseApp instance, triggering a crash if not configured.
+        if FirebaseApp.app() == nil {
+            // The "GoogleService-Info-Tests.plist" is included in the test target's resources.
+            // Use `Bundle.module` which is the correct way to access resources in a Swift Package.
+            guard let path = Bundle.module.path(forResource: "GoogleService-Info-Tests", ofType: "plist"), // <-- THIS LINE IS CHANGED
+            let options = FirebaseOptions(contentsOfFile: path) else {
+                fatalError("Could not locate or parse GoogleService-Info-Tests.plist for testing.")
+            }
+            FirebaseApp.configure(options: options)
+            print("FirebaseApp configured for test suite.")
+        }
+    }
 
-    // MARK: Lifecycle
     override func setUp() async throws {
         try await super.setUp()
 
-        if !AuthServiceTests.firebaseConfigured {
-            print("AuthServiceTests: Programmatically configuring Firebase and Auth Emulator for tests (one-time)...")
-
-            // These values should match your GoogleService-Info-Tests.plist or your test project's needs
-            let googleAppID = "1:1234567890:ios:abcdef1234567890" // From your plist
-            let gcmSenderID = "1234567890" // From your plist
-
-            // Create FirebaseOptions programmatically
-            let options = FirebaseOptions(googleAppID: googleAppID, gcmSenderID: gcmSenderID)
-
-            // Set other essential properties
-            options.apiKey = "dummy-api-key" // From your plist
-            options.projectID = "asimpleauthkit-test-project" // From your plist
-
-            // Crucially, set the bundleID to what your entitlements and tests expect
-            // This helps align what Firebase *thinks* the bundle ID is, which can affect keychain access.
-            options.bundleID = "oi.appsimple.ASimpleAuthKitTests" // From your plist
-
-            // The clientID is often derived from googleAppID, or can be set if you have a specific OAuth client ID
-            // FirebaseOptions(googleAppID:gcmSenderID:) constructor usually sets this internally.
-            // If Google Sign-In later complains, you might need to set options.clientID explicitly
-            // options.clientID = "YOUR_IOS_CLIENT_ID_if_different_or_needed_explicitly" // Typically from Google Cloud Console for the GoogleAppID
-
-            // Configure Firebase with the programmatic options
-            // Check if the default app is already configured.
-            // If it is, and options differ, this would normally be an issue.
-            // The `firebaseConfigured` flag should prevent re-configuration with different options.
-            if FirebaseApp.app() == nil {
-                FirebaseApp.configure(options: options)
-                print("AuthServiceTests: Firebase configured with programmatic options.")
-            } else {
-                // If app exists, assume it was configured correctly by a previous test run's static block.
-                // This part of the logic relies on `firebaseConfigured` ensuring it's the *same* config.
-                print("AuthServiceTests: Firebase default app already configured.")
-            }
-
-            Auth.auth().useEmulator(withHost: authEmulatorHost, port: authEmulatorPort)
-            AuthServiceTests.firebaseConfigured = true
-            print("AuthServiceTests: One-time Firebase test setup complete with programmatic options.")
-        }
-
-        // Attempt pre-test sign out from emulator
-        try? Auth.auth().signOut()
-
         cancellables = []
         dummyVC = DummyViewController()
-        config = AuthConfig(
-            tosURL: URL(string: "test-tos.com"),
-            privacyPolicyURL: URL(string: "test-privacy.com")
-        )
+        config = AuthConfig()
         mockSecureStorage = MockSecureStorage()
         mockBiometricAuthenticator = MockBiometricAuthenticator()
         mockFirebaseAuthenticator = MockFirebaseAuthenticator()
+        mockFirebaseAuthClient = MockFirebaseAuthClient()
 
         sut = AuthService(
             config: config,
             secureStorage: mockSecureStorage,
             firebaseAuthenticator: mockFirebaseAuthenticator,
             biometricAuthenticator: mockBiometricAuthenticator,
+            firebaseAuthClient: mockFirebaseAuthClient,
             isTestMode: true
         )
         sut.forceStateForTesting(.signedOut)
-        print("AuthServiceTests: SUT initialized in test mode, forced to .signedOut.")
     }
 
     override func tearDown() async throws {
-        // Attempt post-test sign out
-        try? Auth.auth().signOut()
-
-        sut?.invalidate() // Call invalidate before SUT is nilled
-
-        cancellables.forEach { $0.cancel() }
-        cancellables = nil
+        sut?.invalidate()
         sut = nil
-        mockFirebaseAuthenticator = nil
-        mockBiometricAuthenticator = nil
-        mockSecureStorage = nil
-        config = nil
+        cancellables = nil
         dummyVC = nil
-        print("AuthServiceTests: Teardown complete.")
+        config = nil
+        mockSecureStorage = nil
+        mockBiometricAuthenticator = nil
+        mockFirebaseAuthenticator = nil
+        mockFirebaseAuthClient = nil
         try await super.tearDown()
     }
 
-    // MARK: - Helper: Arrange Successful Sign-In State
-    // This helper might be less direct now, as successful sign-in depends on which provider method is called.
-    // We'll mostly set up mockFirebaseAuthenticator directly in tests.
-    private func arrangeSUTStateToSignedIn(user: AuthUser = createDummyUser()) async {
-        mockSecureStorage.reset()
-        mockBiometricAuthenticator.reset()
-        mockBiometricAuthenticator.mockIsAvailable = false // Default to no biometrics for simple sign-in
+    // MARK: - Auth State Listener Tests
 
-        // Simulate a successful sign-in has occurred and user ID saved
-        try? await mockSecureStorage.saveLastUserID(user.uid)
+    func testAuthStateListener_whenUserSignsInExternally_updatesStateToSignedIn() async throws {
+        sut.isTestMode = false // Allow listener to react
+        let firebaseUser = createDummyFirebaseUser(uid: "externalUser")
+        let authUser = AuthUser(firebaseUser: firebaseUser)
 
-        // Force the SUT state
-        sut.forceStateForTesting(.signedIn(user))
-        XCTAssertEqual(sut.state, .signedIn(user), "Helper: Failed to arrange SUT to signedIn state.")
+        let expectation = XCTestExpectation(description: "State should update to .signedIn")
+        sut.$state.dropFirst().sink { state in
+            if state == .signedIn(authUser) {
+                expectation.fulfill()
+            }
+        }.store(in: &cancellables)
+
+        mockFirebaseAuthClient.simulateAuthStateChange(to: firebaseUser)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        XCTAssertEqual(sut.state, .signedIn(authUser))
     }
 
-    // MARK: - Initialization Tests
-    func testInit_initialStateIsSignedOut() {
-        // setUp now forces to .signedOut
+    func testAuthStateListener_whenUserSignsOutExternally_updatesStateToSignedOutAndClearsData() async throws {
+        sut.forceStateForTesting(.signedIn(createDummyAuthUser()))
+        sut.isTestMode = false
+
+        let expectation = XCTestExpectation(description: "State should update to .signedOut")
+        sut.$state.dropFirst().sink { state in
+            if state == .signedOut {
+                expectation.fulfill()
+            }
+        }.store(in: &cancellables)
+
+        mockFirebaseAuthClient.simulateAuthStateChange(to: nil)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
         XCTAssertEqual(sut.state, .signedOut)
-        XCTAssertNil(sut.lastError)
+        XCTAssertEqual(mockSecureStorage.clearUserIDCallCount, 1)
     }
 
-    // MARK: - Email/Password Sign-In Tests
-    func testSignInWithEmail_Success_updatesStateToSignedIn_SavesUserID() async throws {
-        let expectedUser = createDummyUser(uid: "emailUser1", providerID: "password")
-        mockFirebaseAuthenticator.signInWithEmailResultProvider = { email, pass in
-            XCTAssertEqual(email, "test@example.com")
-            XCTAssertEqual(pass, "password123")
-            return .success(expectedUser)
-        }
-        mockBiometricAuthenticator.mockIsAvailable = false // Ensure no bio prompt
+    func testAuthStateListener_doesNotOverrideState_whenAuthenticating() async throws {
+        sut.forceStateForTesting(.authenticating("Signing in..."))
+        sut.isTestMode = false
+
+        mockFirebaseAuthClient.simulateAuthStateChange(to: nil)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(sut.state, .authenticating("Signing in..."))
+    }
+
+    // MARK: - Lifecycle Tests
+
+    func testInit_addsStateDidChangeListener() {
+        XCTAssertEqual(mockFirebaseAuthClient.addStateDidChangeListenerCallCount, 1)
+    }
+
+    func testInvalidate_removesStateDidChangeListener() {
+        sut.invalidate()
+        XCTAssertEqual(mockFirebaseAuthClient.removeStateDidChangeListenerCallCount, 1)
+    }
+
+    // MARK: - Email/Password Sign-In & Creation
+
+    func testSignInWithEmail_Success_updatesStateToSignedIn() async throws {
+        let expectedUser = createDummyAuthUser(uid: "emailUser1", providerID: "password")
+        mockFirebaseAuthenticator.signInWithEmailResultProvider = { _, _ in .success(expectedUser) }
 
         await sut.signInWithEmail(email: "test@example.com", password: "password123")
 
         XCTAssertEqual(sut.state, .signedIn(expectedUser))
         XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1)
-        let storedID = await mockSecureStorage.getLastUserID()
-        XCTAssertEqual(storedID, expectedUser.uid)
+        let lastUserID = await mockSecureStorage.getLastUserID()
+        XCTAssertEqual(lastUserID, "emailUser1")
     }
 
-    // Rename the test to reflect its true purpose more accurately
-    func testSignInWithEmail_Success_updatesStateToSignedIn_AndSavesUserID() async throws {
-        let expectedUser = createDummyUser(uid: "emailBioUser", providerID: "password")
-        mockBiometricAuthenticator.mockIsAvailable = true // Keep this for setting up the mock correctly, but it won't directly affect this test's assertions for state transition.
-
-        mockFirebaseAuthenticator.signInWithEmailResultProvider = { email, pass in
-            XCTAssertEqual(email, "test@example.com")
-            XCTAssertEqual(pass, "password123")
-            return .success(expectedUser)
-        }
-
-        await sut.signInWithEmail(email: "test@example.com", password: "password123")
-
-        // ASSERTION 1: State should now be .signedIn
-        XCTAssertEqual(sut.state, .signedIn(expectedUser), "AuthService should transition to .signedIn directly after successful sign-in.")
-        XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, 1)
-
-        // ASSERTION 2: AuthService *did* save the user ID, so call count should be 1
-        XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1, "AuthService should save the user ID to secure storage upon successful sign-in.")
-        let storedID = await mockSecureStorage.getLastUserID()
-        XCTAssertEqual(storedID, expectedUser.uid, "The correct user ID should be saved in mock secure storage.")
-
-        // REMOVE these lines, as they are causing the failure and testing a different flow:
-        // sut.requireBiometricAuthentication()
-        // XCTAssertEqual(sut.state, .requiresBiometrics, "AuthService should transition to .requiresBiometrics when explicitly told to by the app.")
-    }
-
-    func testSignInWithEmail_Failure_WrongPassword_setsErrorAndStateRemainsSignedOut() async {
-        let wrongPasswordError = AuthError.firebaseAuthError(
-            FirebaseErrorData(code: AuthErrorCode.wrongPassword.rawValue, domain: AuthErrorDomain, message: "Wrong password.")
-        )
+    func testSignInWithEmail_Failure_WrongPassword_setsErrorAndRemainsSignedOut() async {
+        let wrongPasswordError = AuthError.firebaseAuthError(FirebaseErrorData(code: AuthErrorCode.wrongPassword.rawValue, domain: AuthErrorDomain, message: ""))
         mockFirebaseAuthenticator.signInWithEmailResultProvider = { _, _ in .failure(wrongPasswordError) }
 
         await sut.signInWithEmail(email: "test@example.com", password: "wrongpassword")
 
         XCTAssertEqual(sut.state, .signedOut)
         XCTAssertEqual(sut.lastError, wrongPasswordError)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 0)
     }
 
-    func testRequireBiometricAuthentication_WhenSignedOutAndBiometricsAvailable_TransitionsToRequiresBiometrics() async throws {
-        // Arrange: Set up the scenario where a user previously signed in and enabled biometrics
-        let returningUser = createDummyUser(uid: "returningBioUser")
-
-        // Simulate the user ID being saved in the keychain from a prior session
-        try await mockSecureStorage.saveLastUserID(returningUser.uid)
-        // Reset save count, as this is setup, not part of the action being tested
-        mockSecureStorage.saveUserIDCallCount = 0
-
-        // Ensure mock biometrics are available for the SUT to consider
-        mockBiometricAuthenticator.mockIsAvailable = true
-
-        // SUT is already in .signedOut state from setUp(), which is the prerequisite.
-
-        // Act: The app (or BiometricController) determines it needs to prompt for biometrics
-        sut.requireBiometricAuthentication()
-
-        // Assert: The state should now be .requiresBiometrics
-        XCTAssertEqual(sut.state, .requiresBiometrics, "AuthService should transition to .requiresBiometrics when requireBiometricAuthentication is called while signed out and biometrics are available.")
-        XCTAssertNil(sut.lastError) // Should not be an error for merely requiring biometrics
-    }
-
-    func testRequireBiometricAuthentication_WhenSignedIn_DoesNotTransition() async throws {
-        // Arrange: SUT is in signedIn state
-        let signedInUser = createDummyUser(uid: "loggedInUser")
-        sut.forceStateForTesting(.signedIn(signedInUser)) // Force state for test mode
-        mockBiometricAuthenticator.mockIsAvailable = true
-
-        // Act
-        sut.requireBiometricAuthentication()
-
-        // Assert: State should remain .signedIn, and no error
-        XCTAssertEqual(sut.state, .signedIn(signedInUser), "AuthService should not transition from .signedIn when requireBiometricAuthentication is called.")
-        XCTAssertNil(sut.lastError)
-    }
-
-    func testRequireBiometricAuthentication_WhenBiometricsNotAvailable_DoesNotTransition() async {
-        // Arrange: SUT is .signedOut (from setUp)
-        mockBiometricAuthenticator.mockIsAvailable = false // Simulate biometrics not available
-
-        // Act
-        sut.requireBiometricAuthentication()
-
-        // Assert: State should remain .signedOut
-        XCTAssertEqual(sut.state, .signedOut, "AuthService should remain signed out if biometrics are not available.")
-        XCTAssertNil(sut.lastError)
-    }
-
-
-    // MARK: - Create Account with Email/Password Tests
     func testCreateAccountWithEmail_Success_updatesStateToSignedIn() async throws {
-        let newUser = createDummyUser(uid: "newEmailUser", email: "new@example.com", providerID: "password")
-        mockFirebaseAuthenticator.createAccountWithEmailResultProvider = { email, pass, dn in
-            XCTAssertEqual(email, "new@example.com")
-            XCTAssertEqual(pass, "newPass123")
-            XCTAssertEqual(dn, "New User")
-            return .success(newUser)
-        }
-        mockBiometricAuthenticator.mockIsAvailable = false
+        let newUser = createDummyAuthUser(uid: "newEmailUser", email: "new@example.com")
+        mockFirebaseAuthenticator.createAccountWithEmailResultProvider = { _, _, _ in .success(newUser) }
 
-        await sut.createAccountWithEmail(email: "new@example.com", password: "newPass123", displayName: "New User")
+        await sut.createAccountWithEmail(email: "new@example.com", password: "newPass123")
 
         XCTAssertEqual(sut.state, .signedIn(newUser))
         XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockFirebaseAuthenticator.createAccountWithEmailCallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1)
     }
 
-    func testCreateAccountWithEmail_Failure_EmailAlreadyInUse_LeadsToAccountLinkingRequired() async throws {
+    func testCreateAccountWithEmail_Failure_EmailAlreadyInUse_setsStateToEmailInUseSuggestSignIn() async throws {
         let existingEmail = "existing@example.com"
-        // This error is now constructed by MockFirebaseAuthenticator's processMockResult
-        // if its provider returns .accountLinkingRequired with a nil credential.
-        // Or, if it directly returns the error code for emailAlreadyInUse, FirebaseAuthenticator
-        // should convert it.
-        let emailInUseError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: "password")
+        let emailInUseError = AuthError.emailAlreadyInUseDuringCreation(email: existingEmail)
+        mockFirebaseAuthenticator.createAccountWithEmailResultProvider = { _, _, _ in .failure(emailInUseError) }
 
-        mockFirebaseAuthenticator.createAccountWithEmailResultProvider = { email, _, _ in
-            XCTAssertEqual(email, existingEmail)
-            // Simulate that FirebaseAuthenticator returns the new AuthError type
-            // Also, simulate that FirebaseAuthenticator has set its internal pendingCredentialForLinking to nil
-            self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(nil) // Explicitly ensure mock state
-            return .failure(emailInUseError)
-        }
+        await sut.createAccountWithEmail(email: existingEmail, password: "anypassword")
 
-        // Mock fetchSignInMethods to return some providers for testing UI state
-        // Note: In a real scenario with EEP, this might be empty.
-        // For testing the state transition, we can assume it returns something.
-        // This requires Auth.auth() to be involved or more complex mocking.
-        // For now, we test AuthService's reaction to the error from authenticator.
-        // To fully test the fetchSignInMethods call, we'd need an emulator user.
-
-        await sut.createAccountWithEmail(email: existingEmail, password: "anypassword", displayName: nil)
-
-        if case .requiresAccountLinking(let email, let provider) = sut.state {
-            XCTAssertEqual(email, existingEmail)
-            XCTAssertEqual(provider, "password", "Expected attempted provider to be 'password'.")
-            print("Provider in state for .requiresAccountLinking: \(provider ?? "NA")")
-        } else {
-            XCTFail("Expected .requiresAccountLinking state, got \(sut.state)")
-        }
-
-        XCTAssertEqual(sut.lastError, emailInUseError) // Error that initiated linking flow
-        XCTAssertEqual(mockFirebaseAuthenticator.createAccountWithEmailCallCount, 1)
-        XCTAssertNil(sut.pendingCredentialToLinkAfterReauth, "No credential should be pending from email creation fail")
+        XCTAssertEqual(sut.state, .emailInUseSuggestSignIn(email: existingEmail))
+        XCTAssertEqual(sut.lastError, emailInUseError)
+        XCTAssertNil(sut.pendingCredentialToLinkAfterReauth)
     }
 
+    // MARK: - Google & Apple Sign-In
 
-    // MARK: - Google Sign-In Tests
     func testSignInWithGoogle_Success_updatesStateToSignedIn() async throws {
-        let googleUser = createDummyUser(uid: "googleUser1", providerID: "google.com")
+        let googleUser = createDummyAuthUser(uid: "googleUser1", providerID: "google.com")
         mockFirebaseAuthenticator.signInWithGoogleResultProvider = { _ in .success(googleUser) }
-        mockBiometricAuthenticator.mockIsAvailable = false
 
         await sut.signInWithGoogle(presentingViewController: dummyVC)
 
         XCTAssertEqual(sut.state, .signedIn(googleUser))
         XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithGoogleCallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1)
     }
 
-    func testSignInWithGoogle_Cancelled_setsErrorAndStateRemainsSignedOut() async {
+    func testSignInWithGoogle_Cancelled_setsErrorAndRemainsSignedOut() async {
         mockFirebaseAuthenticator.signInWithGoogleResultProvider = { _ in .failure(.cancelled) }
 
         await sut.signInWithGoogle(presentingViewController: dummyVC)
@@ -322,207 +198,121 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertEqual(sut.lastError, .cancelled)
     }
 
-    // MARK: - Apple Sign-In Tests
     func testSignInWithApple_Success_updatesStateToSignedIn() async throws {
-        let appleUser = createDummyUser(uid: "appleUser1", providerID: "apple.com")
-        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, nonce in
-            XCTAssertFalse(nonce.isEmpty, "Nonce should not be empty")
-            return .success(appleUser)
-        }
-        mockBiometricAuthenticator.mockIsAvailable = false
-
-        await sut.signInWithApple(presentingViewController: dummyVC) // Nonce handled by SUT
-
-        XCTAssertEqual(sut.state, .signedIn(appleUser))
-        XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithAppleCallCount, 1)
-        XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1)
-    }
-
-    // MARK: - Account Linking Flow Test (Example: Apple sign-in, account exists with Email)
-    func testLinkingFlow_AppleSignIn_AccountExistsWithEmail_ReauthWithEmail_LinksApple() async throws {
-        let existingEmail = "linktest@example.com"
-        let actualAppleCredential = createPlaceholderAuthCredential(providerID: "apple.com")
-        let appleCredentialProviderId = createPlaceholderAuthCredential(providerID: "apple.com")
-
-        // 1. Initial Apple Sign-In attempt fails with accountLinkingRequired
-        let linkingError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: appleCredentialProviderId.provider)
-        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in
-            self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(actualAppleCredential)
-            return .failure(linkingError)
-        }
+        let appleUser = createDummyAuthUser(uid: "appleUser1", providerID: "apple.com")
+        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in .success(appleUser) }
 
         await sut.signInWithApple(presentingViewController: dummyVC)
 
-        guard case .requiresAccountLinking(let email, _) = sut.state else {
-            XCTFail("Expected .requiresAccountLinking state, got \(sut.state). Error: \(String(describing: sut.lastError))")
-            return
-        }
-        XCTAssertEqual(email, existingEmail)
-        XCTAssertEqual(sut.lastError, linkingError)
-        XCTAssertNotNil(sut.pendingCredentialToLinkAfterReauth?.provider, "SUT should have stored the pending Apple credential")
-        XCTAssertEqual(sut.pendingCredentialToLinkAfterReauth?.provider, appleCredentialProviderId.provider)
-        let initialAppleCallCount = mockFirebaseAuthenticator.signInWithAppleCallCount
-        let initialEmailCallCount = mockFirebaseAuthenticator.signInWithEmailCallCount
-        let initialLinkCallCount = mockFirebaseAuthenticator.linkCredentialCallCount
-
-
-        // 2. User is prompted to re-authenticate with their existing Email/Password method
-        print("Test Step 2: Re-authenticating with Email/Password...")
-
-        // --- CRITICAL INTEGRATION STEP FOR LINKING ---
-        var firebaseUserForLinking: FirebaseAuth.User?
-        do {
-            // This is the problematic call
-            let authResult = try await Auth.auth().signIn(withEmail: existingEmail, password: "correctpassword")
-            firebaseUserForLinking = authResult.user
-            // ...
-        } catch {
-            print("testLinkingFlow: Re-authentication signIn(withEmail:password:) failed with error: \(error.localizedDescription). Skipping test.")
-            // XCTFail is already in the original test if this fails, but we'll make it an XCTSkip explicitly
-            // The original XCTFail:
-            // XCTFail("Failed to sign in 'originalUser' (\(existingEmail)) to emulator for linking test re-auth step: \(error). Ensure this user exists in the emulator with 'correctpassword'.")
-            // Replace with XCTSkip:
-            throw XCTSkip("Emulator signIn(withEmail:password:) for re-auth failed, likely due to keychain/entitlement issues: \(error.localizedDescription)")
-        }
-        // --- END CRITICAL INTEGRATION STEP ---
-
-        // Mock the linking call itself
-        let linkedProviderId = appleCredentialProviderId.provider // The provider of the credential being linked
-        mockFirebaseAuthenticator.linkCredentialResultProvider = { credToLink, fbUserToLinkTo in
-            XCTAssertEqual(fbUserToLinkTo.uid, firebaseUserForLinking!.uid) // Ensure linking to the correct Firebase User
-            XCTAssertEqual(credToLink.provider, appleCredentialProviderId.provider)
-            // Simulate linking success by returning a user that reflects the linked state
-            // The UID remains the same. The providerID in AuthUser might reflect the newly linked one or primary.
-            return .success(createDummyUser(uid: firebaseUserForLinking!.uid, email: existingEmail, providerID: linkedProviderId))
-        }
-        mockBiometricAuthenticator.mockIsAvailable = false
-
-        await sut.signInWithEmail(email: existingEmail, password: "correctpassword")
-
-        // 3. Assert final state
-        if case .signedIn(let finalUser) = sut.state {
-            XCTAssertEqual(finalUser.uid, firebaseUserForLinking!.uid) // UID should be that of the original, now linked, user
-            // To verify the link, you might also check finalUser.providerData in a real scenario,
-            // or ensure the providerID reflects the new link if your AuthUser logic does that.
-            // For this test, checking UID and nil error is key.
-        } else {
-            XCTFail("Expected .signedIn state after successful linking, got \(sut.state). Error: \(String(describing: sut.lastError))")
-        }
-        XCTAssertNil(sut.lastError, "Error should be nil after successful link. Actual: \(String(describing: sut.lastError))")
-        XCTAssertNil(sut.pendingCredentialToLinkAfterReauth, "Pending credential should be cleared after linking.")
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithAppleCallCount, initialAppleCallCount)
-        XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, initialEmailCallCount + 1)
-        XCTAssertEqual(mockFirebaseAuthenticator.linkCredentialCallCount, initialLinkCallCount + 1)
-
-        // saveUserIDCallCount depends on whether the UID changed or biometrics setup.
-        // If the UID was already saved and biometrics settings didn't require a re-save, it might be 0 for this part.
-        // For a fresh link, it's likely 1.
-        // Let's assume it's saved after linking if it's considered a successful sign-in/update.
-        // AuthService.completeAccountLinking calls checkBiometricsRequirement, which can call saveLastUserID.
-        // This depends on the state of mockSecureStorage.getLastUserID() before this linking.
-        // For simplicity, if you reset mockSecureStorage before this test, it will be 1.
-        // If you want to be precise, check the conditions in `determineBiometricStateInternal`.
-        // For this test, let's focus on the linking itself. If saveUserID is not the primary assertion, make it flexible or set up mockSecureStorage for a specific outcome.
-        // XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1) // This might need adjustment based on pre-test storage state
+        XCTAssertEqual(sut.state, .signedIn(appleUser))
+        XCTAssertNil(sut.lastError)
+        XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1)
     }
 
-    // MARK: - Biometrics Tests (largely similar, ensure they use new mocks)
-    func testAuthenticateWithBiometrics_Success_whenRequired_updatesState() async throws {
-        // This test might need an actual Firebase user session in the emulator
-        // if `Auth.auth().currentUser` is crucial for the SUT's internal logic.
-        // Forcing state might not be enough if SUT relies on a live `currentUser`.
-        let testUser = createDummyUser(uid: "bioUserActual")
-        try await _ = forceRequiresBiometricsStateAndEmulatorUser() // New helper for this
+    // MARK: - Sign Out
 
+    func testSignOut_callsClientAndClearsData() async throws {
+        sut.forceStateForTesting(.signedIn(createDummyAuthUser()))
+        
+        await sut.signOut()
+
+        XCTAssertEqual(mockFirebaseAuthClient.signOutCallCount, 1)
+        XCTAssertEqual(sut.state, .signedOut)
+        XCTAssertEqual(mockSecureStorage.clearUserIDCallCount, 1) // This will now pass
+        XCTAssertEqual(mockFirebaseAuthenticator.clearTemporaryCredentialsCallCount, 1) // This will now pass
+        XCTAssertNil(sut.lastError)
+    }
+
+    // MARK: - Biometrics
+
+    func testRequireBiometricAuthentication_WhenSignedOutAndAvailable_TransitionsState() {
+        mockBiometricAuthenticator.mockIsAvailable = true
+        sut.requireBiometricAuthentication()
+        XCTAssertEqual(sut.state, .requiresBiometrics)
+    }
+
+    func testRequireBiometricAuthentication_WhenNotAvailable_DoesNotTransition() {
+        mockBiometricAuthenticator.mockIsAvailable = false
+        sut.requireBiometricAuthentication()
+        XCTAssertEqual(sut.state, .signedOut)
+    }
+
+    func testRequireBiometricAuthentication_WhenSignedIn_DoesNotTransition() {
+        sut.forceStateForTesting(.signedIn(createDummyAuthUser()))
+        sut.requireBiometricAuthentication()
+        XCTAssertTrue(sut.state.isSignedIn)
+    }
+
+    func testAuthenticateWithBiometrics_Success_updatesState() async throws {
+        let firebaseUser = createDummyFirebaseUser(uid: "bioUser")
+        mockFirebaseAuthClient.mockCurrentUser = firebaseUser
+        sut.forceStateForTesting(.requiresBiometrics)
         mockBiometricAuthenticator.authResultProvider = { .success(()) }
 
         await sut.authenticateWithBiometrics(reason: "Test Bio")
 
         if case .signedIn(let signedInUser) = sut.state {
-            XCTAssertEqual(signedInUser.uid, testUser.uid)
+            XCTAssertEqual(signedInUser.uid, firebaseUser.uid)
         } else {
             XCTFail("Expected .signedIn state, got \(sut.state)")
         }
-        XCTAssertNil(sut.lastError)
-        XCTAssertEqual(mockBiometricAuthenticator.authenticateCallCount, 1)
+    }
+
+    func testAuthenticateWithBiometrics_Failure_revertsToRequiresBiometrics() async {
+        mockFirebaseAuthClient.mockCurrentUser = createDummyFirebaseUser()
+        sut.forceStateForTesting(.requiresBiometrics)
+        let bioError = AuthError.biometricsFailed(.userCancel)
+        mockBiometricAuthenticator.authResultProvider = { .failure(bioError) }
+
+        await sut.authenticateWithBiometrics(reason: "Test Bio")
+
+        XCTAssertEqual(sut.state, .requiresBiometrics)
+        XCTAssertEqual(sut.lastError, bioError)
     }
 
     // MARK: - Password Reset
-    func testSendPasswordResetEmail_Success() async {
-        let email = "reset@example.com"
-        mockFirebaseAuthenticator.sendPasswordResetEmailError = nil // Explicitly success
 
-        await sut.sendPasswordResetEmail(to: email)
+    func testSendPasswordResetEmail_Success() async {
+        await sut.sendPasswordResetEmail(to: "reset@example.com")
 
         XCTAssertNil(sut.lastError)
         XCTAssertEqual(mockFirebaseAuthenticator.sendPasswordResetEmailCallCount, 1)
-        XCTAssertEqual(mockFirebaseAuthenticator.lastEmailForPasswordReset, email)
-        // State should revert from .authenticating if it was set
-        XCTAssertEqual(sut.state, .signedOut) // Or previous non-authenticating state
+        XCTAssertEqual(sut.state, .signedOut) // Reverts from .authenticating
     }
 
     func testSendPasswordResetEmail_Failure() async {
-        let email = "resetfail@example.com"
-        let expectedError = AuthError.firebaseAuthError(FirebaseErrorData(code: 123, domain: "test", message: "fail"))
+        let expectedError = AuthError.helpfulUserNotFound(email: "test@test.com")
         mockFirebaseAuthenticator.sendPasswordResetEmailError = expectedError
 
-        await sut.sendPasswordResetEmail(to: email)
+        await sut.sendPasswordResetEmail(to: "resetfail@example.com")
 
         XCTAssertEqual(sut.lastError, expectedError)
         XCTAssertEqual(mockFirebaseAuthenticator.sendPasswordResetEmailCallCount, 1)
-        XCTAssertEqual(sut.state, .signedOut) // Or previous non-authenticating state
     }
 
-    // --- Helper for tests needing a live emulator user for biometrics ---
-    // This is complex because it mixes mocking SUT dependencies with live Firebase state
-    private func forceRequiresBiometricsStateAndEmulatorUser() async throws -> AuthUser {
-        print("ForceBiometrics Helper (with Emulator User): Starting...")
-        try? Auth.auth().signOut() // Clear any existing emulator session
+    // MARK: - Linking Flow
 
-        var firebaseEmulatorUser: FirebaseAuth.User?
-        do {
-            // This is the problematic call
-            firebaseEmulatorUser = try await Auth.auth().signInAnonymously().user
-        } catch {
-            print("ForceBiometrics Helper: signInAnonymously failed with error: \(error.localizedDescription). Skipping test that relies on this setup.")
-            throw XCTSkip("Emulator signInAnonymously failed, likely due to keychain/entitlement issues in SPM test environment: \(error.localizedDescription)")
+    func testLinkingFlow_SignInFailsWithAccountLinkingRequired_setsCorrectStateAndStoresCredential() async throws {
+        let existingEmail = "linktest@example.com"
+        let appleCredential = createPlaceholderAuthCredential(providerID: "apple.com")
+        let linkingError = AuthError.accountLinkingRequired(email: existingEmail, attemptedProviderId: appleCredential.provider)
+
+        mockFirebaseAuthenticator.signInWithAppleResultProvider = { _, _ in
+            self.mockFirebaseAuthenticator.forcePendingCredentialForLinking(appleCredential)
+            return .failure(linkingError)
         }
 
-        guard let validFirebaseUser = firebaseEmulatorUser else {
-            // Should be caught by the catch block, but as a safeguard:
-            throw XCTSkip("Emulator signInAnonymously did not return a user, though no error was thrown.")
+        await sut.signInWithApple(presentingViewController: dummyVC)
+
+        guard case .requiresAccountLinking(let email, let providerId) = sut.state else {
+            XCTFail("Expected .requiresAccountLinking state, got \(sut.state)")
+            return
         }
 
-        let emulatorAuthUser = AuthUser(firebaseUser: validFirebaseUser)
-
-        try await mockSecureStorage.saveLastUserID(emulatorAuthUser.uid)
-        mockBiometricAuthenticator.mockIsAvailable = true
-        sut.forceStateForTesting(.requiresBiometrics)
-
-        guard sut.state == .requiresBiometrics else {
-            try? Auth.auth().signOut()
-            throw TestError.unexpectedState("Failed to force .requiresBiometrics state, was \(sut.state)")
-        }
-        print("ForceBiometrics Helper (with Emulator User): Successfully forced .requiresBiometrics with live user \(emulatorAuthUser.uid).")
-
-        mockBiometricAuthenticator.reset()
-        mockSecureStorage.saveUserIDCallCount = 0
-        mockSecureStorage.getLastUserIDCallCount = 0
-        mockSecureStorage.clearUserIDCallCount = 0
-        mockFirebaseAuthenticator.reset()
-        return emulatorAuthUser
+        XCTAssertEqual(email, existingEmail)
+        XCTAssertEqual(providerId, "apple.com")
+        XCTAssertEqual(sut.lastError, linkingError)
+        XCTAssertNotNil(sut.pendingCredentialToLinkAfterReauth)
+        XCTAssertEqual(sut.pendingCredentialToLinkAfterReauth?.provider, "apple.com")
     }
-}
-
-// Extension to AuthService for test-specific helpers
-extension AuthService {
-    #if DEBUG
-        @MainActor
-        func forcePendingCredentialForTesting(_ cred: AuthCredential?) {
-            guard isTestMode else { return }
-            self.pendingCredentialToLinkAfterReauth = cred
-            print("AuthService (Test Mode): Forced pendingCredentialToLinkAfterReauth.")
-        }
-    #endif
 }

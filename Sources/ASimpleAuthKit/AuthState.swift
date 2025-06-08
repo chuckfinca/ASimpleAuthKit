@@ -60,6 +60,8 @@ public enum AuthState: Equatable, Sendable {
             return lEmail == rEmail && lProvider == rProvider
         case (.requiresMergeConflictResolution, .requiresMergeConflictResolution):
             return true
+        case (.emailInUseSuggestSignIn(let lEmail), .emailInUseSuggestSignIn(let rEmail)):
+            return lEmail == rEmail
         default: return false
         }
     }

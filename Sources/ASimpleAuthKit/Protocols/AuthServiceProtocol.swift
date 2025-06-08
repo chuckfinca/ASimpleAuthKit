@@ -22,7 +22,7 @@ public protocol AuthServiceProtocol: ObservableObject {
     func signInWithApple(presentingViewController: UIViewController) async
     func sendPasswordResetEmail(to email: String) async
 
-    func signOut()
+    func signOut() async
 
     /// Manually puts the AuthService into .requiresBiometrics state
     /// Call this when you want to require biometric authentication
