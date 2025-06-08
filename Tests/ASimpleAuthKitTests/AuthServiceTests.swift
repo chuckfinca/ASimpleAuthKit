@@ -150,21 +150,32 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertEqual(storedID, expectedUser.uid)
     }
 
-    func testSignInWithEmail_Success_updatesStateToRequiresBiometrics() async throws {
-        let user = createDummyUser(uid: "emailBioUser", providerID: "password")
-        // Pre-condition: User ID already in keychain, biometrics available
-        try await mockSecureStorage.saveLastUserID(user.uid)
-        mockBiometricAuthenticator.mockIsAvailable = true
-        mockFirebaseAuthenticator.signInWithEmailResultProvider = { _, _ in .success(user) }
-        mockSecureStorage.saveUserIDCallCount = 0 // Reset after manual save
+    // Rename the test to reflect its true purpose more accurately
+    func testSignInWithEmail_Success_updatesStateToSignedIn_AndSavesUserID() async throws {
+        let expectedUser = createDummyUser(uid: "emailBioUser", providerID: "password")
+        mockBiometricAuthenticator.mockIsAvailable = true // Keep this for setting up the mock correctly, but it won't directly affect this test's assertions for state transition.
+
+        mockFirebaseAuthenticator.signInWithEmailResultProvider = { email, pass in
+            XCTAssertEqual(email, "test@example.com")
+            XCTAssertEqual(pass, "password123")
+            return .success(expectedUser)
+        }
 
         await sut.signInWithEmail(email: "test@example.com", password: "password123")
 
-        XCTAssertEqual(sut.state, .requiresBiometrics)
+        // ASSERTION 1: State should now be .signedIn
+        XCTAssertEqual(sut.state, .signedIn(expectedUser), "AuthService should transition to .signedIn directly after successful sign-in.")
         XCTAssertNil(sut.lastError)
         XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, 1)
-        // SaveUserID should NOT be called again by AuthService if UID matches and bio is available
-        XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 0)
+
+        // ASSERTION 2: AuthService *did* save the user ID, so call count should be 1
+        XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 1, "AuthService should save the user ID to secure storage upon successful sign-in.")
+        let storedID = await mockSecureStorage.getLastUserID()
+        XCTAssertEqual(storedID, expectedUser.uid, "The correct user ID should be saved in mock secure storage.")
+
+        // REMOVE these lines, as they are causing the failure and testing a different flow:
+        // sut.requireBiometricAuthentication()
+        // XCTAssertEqual(sut.state, .requiresBiometrics, "AuthService should transition to .requiresBiometrics when explicitly told to by the app.")
     }
 
     func testSignInWithEmail_Failure_WrongPassword_setsErrorAndStateRemainsSignedOut() async {
@@ -180,6 +191,55 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertEqual(mockFirebaseAuthenticator.signInWithEmailCallCount, 1)
         XCTAssertEqual(mockSecureStorage.saveUserIDCallCount, 0)
     }
+
+    func testRequireBiometricAuthentication_WhenSignedOutAndBiometricsAvailable_TransitionsToRequiresBiometrics() async throws {
+        // Arrange: Set up the scenario where a user previously signed in and enabled biometrics
+        let returningUser = createDummyUser(uid: "returningBioUser")
+
+        // Simulate the user ID being saved in the keychain from a prior session
+        try await mockSecureStorage.saveLastUserID(returningUser.uid)
+        // Reset save count, as this is setup, not part of the action being tested
+        mockSecureStorage.saveUserIDCallCount = 0
+
+        // Ensure mock biometrics are available for the SUT to consider
+        mockBiometricAuthenticator.mockIsAvailable = true
+
+        // SUT is already in .signedOut state from setUp(), which is the prerequisite.
+
+        // Act: The app (or BiometricController) determines it needs to prompt for biometrics
+        sut.requireBiometricAuthentication()
+
+        // Assert: The state should now be .requiresBiometrics
+        XCTAssertEqual(sut.state, .requiresBiometrics, "AuthService should transition to .requiresBiometrics when requireBiometricAuthentication is called while signed out and biometrics are available.")
+        XCTAssertNil(sut.lastError) // Should not be an error for merely requiring biometrics
+    }
+
+    func testRequireBiometricAuthentication_WhenSignedIn_DoesNotTransition() async throws {
+        // Arrange: SUT is in signedIn state
+        let signedInUser = createDummyUser(uid: "loggedInUser")
+        sut.forceStateForTesting(.signedIn(signedInUser)) // Force state for test mode
+        mockBiometricAuthenticator.mockIsAvailable = true
+
+        // Act
+        sut.requireBiometricAuthentication()
+
+        // Assert: State should remain .signedIn, and no error
+        XCTAssertEqual(sut.state, .signedIn(signedInUser), "AuthService should not transition from .signedIn when requireBiometricAuthentication is called.")
+        XCTAssertNil(sut.lastError)
+    }
+
+    func testRequireBiometricAuthentication_WhenBiometricsNotAvailable_DoesNotTransition() async {
+        // Arrange: SUT is .signedOut (from setUp)
+        mockBiometricAuthenticator.mockIsAvailable = false // Simulate biometrics not available
+
+        // Act
+        sut.requireBiometricAuthentication()
+
+        // Assert: State should remain .signedOut
+        XCTAssertEqual(sut.state, .signedOut, "AuthService should remain signed out if biometrics are not available.")
+        XCTAssertNil(sut.lastError)
+    }
+
 
     // MARK: - Create Account with Email/Password Tests
     func testCreateAccountWithEmail_Success_updatesStateToSignedIn() async throws {

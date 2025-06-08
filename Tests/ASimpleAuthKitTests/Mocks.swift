@@ -207,7 +207,7 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         let result = provider(credentialToLink, user)
         return try processMockResult(result, isLinking: true) // Pass isLinking context
     }
-    
+
     func forcePendingCredentialForLinking(_ cred: AuthCredential?) {
         self.pendingCredentialForLinking = cred
         print("MockFirebaseAuthenticator: Forced pendingCredentialForLinking.")
@@ -239,6 +239,8 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
         pendingCredentialForLinking = nil
         print("MockFirebaseAuthenticator: clearTemporaryCredentials called. Mock's pending cred cleared.")
     }
+
+    func sendEmailVerification(to firebaseUser: User) async throws { }
 
     // --- Mock Reset and Helper ---
     func reset() {

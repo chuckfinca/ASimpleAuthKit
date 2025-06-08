@@ -27,7 +27,7 @@ public class BiometricController: ObservableObject {
 
     // MARK: - Initialization
 
-    public init(authService: any AuthServiceProtocol, preferenceManager: BiometricPreferenceManager = .shared) {
+    public init(authService: any AuthServiceProtocol, preferenceManager: BiometricPreferenceManager) {
         self.authService = authService
         self.preferenceManager = preferenceManager
 
@@ -157,6 +157,6 @@ public extension BiometricController {
 
     /// Create a BiometricController with the provided AuthService
     static func create(with authService: any AuthServiceProtocol) -> BiometricController {
-        return BiometricController(authService: authService)
+        return BiometricController(authService: authService, preferenceManager: BiometricPreferenceManager.shared)
     }
 }
