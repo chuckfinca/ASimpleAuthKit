@@ -48,7 +48,7 @@ class KeychainStorageTests: XCTestCase {
         XCTAssertTrue(sut.storage.isEmpty, "Precondition: Mock storage should be empty")
 
         // Act
-        let retrievedID = await sut.getLastUserID() // await is correct here
+        let retrievedID = await sut.getLastUserID()
 
         // Assert
         XCTAssertNil(retrievedID, "Should return nil when no user ID is saved") // XCTAssertNil handles the result directly
@@ -62,7 +62,7 @@ class KeychainStorageTests: XCTestCase {
         sut.getLastUserIDCallCount = 0
 
         // Act
-        let retrievedID = await sut.getLastUserID() // await is correct here
+        let retrievedID = await sut.getLastUserID()
 
         // Assert
         XCTAssertEqual(retrievedID, userID, "Should return the previously saved user ID") // XCTAssertEqual handles the result directly

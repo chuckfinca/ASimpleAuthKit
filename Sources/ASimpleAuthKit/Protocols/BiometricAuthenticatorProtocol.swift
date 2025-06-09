@@ -1,6 +1,5 @@
 import Foundation
 
-/// Protocol defining the interface for biometric authentication checks.
 @MainActor
 internal protocol BiometricAuthenticatorProtocol {
     /// Checks if biometric authentication (Face ID, Touch ID) is available and configured on the device.

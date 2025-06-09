@@ -26,6 +26,16 @@ public struct AuthUser: Equatable, Sendable {
         self.providerID = providerID
     }
 
+    public static func createPreviewUser(
+        uid: String = "previewUID",
+        email: String? = "preview@example.com",
+        displayName: String? = "Preview User",
+        isAnonymous: Bool = false,
+        providerID: String? = "password"
+    ) -> AuthUser {
+        return AuthUser(uid: uid, email: email, displayName: displayName, isAnonymous: isAnonymous, providerID: providerID)
+    }
+
     public static func == (lhs: AuthUser, rhs: AuthUser) -> Bool {
         return lhs.uid == rhs.uid // Compare only UID for equality
     }
@@ -37,6 +47,7 @@ public enum AuthState: Equatable, Sendable {
     case requiresBiometrics
     case signedIn(AuthUser)
     case requiresAccountLinking(email: String, attemptedProviderId: String?)
+    case emailInUseSuggestSignIn(email: String)
     case requiresMergeConflictResolution
 
     public static func == (lhs: AuthState, rhs: AuthState) -> Bool {
@@ -49,26 +60,32 @@ public enum AuthState: Equatable, Sendable {
             return lEmail == rEmail && lProvider == rProvider
         case (.requiresMergeConflictResolution, .requiresMergeConflictResolution):
             return true
+        case (.emailInUseSuggestSignIn(let lEmail), .emailInUseSuggestSignIn(let rEmail)):
+            return lEmail == rEmail
         default: return false
         }
     }
-    
+
     public var isAuthenticating: Bool {
         if case .authenticating = self { return true }
         return false
     }
 
-    var allowsSignInAttempt: Bool {
-        switch self {
-        case .signedOut, .requiresBiometrics, .requiresAccountLinking, .requiresMergeConflictResolution: return true
-        case .authenticating, .signedIn: return false
-        }
-    }
-
-    var isPendingResolution: Bool {
+    public var isPendingResolution: Bool {
         switch self {
         case .requiresAccountLinking, .requiresMergeConflictResolution: return true
         default: return false
         }
+    }
+
+    public var isSignedIn: Bool {
+        if case .signedIn = self {
+            return true
+        }
+        return false
+    }
+
+    public var isSignedOut: Bool {
+        return self == .signedOut
     }
 }
