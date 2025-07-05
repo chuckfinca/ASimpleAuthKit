@@ -24,7 +24,7 @@ final class AuthServiceTests: XCTestCase {
         if FirebaseApp.app() == nil {
             // The "GoogleService-Info-Tests.plist" is included in the test target's resources.
             // Use `Bundle.module` which is the correct way to access resources in a Swift Package.
-            guard let path = Bundle.module.path(forResource: "GoogleService-Info-Tests", ofType: "plist"), // <-- THIS LINE IS CHANGED
+            guard let path = Bundle.module.path(forResource: "GoogleService-Info-Tests", ofType: "plist"),
             let options = FirebaseOptions(contentsOfFile: path) else {
                 fatalError("Could not locate or parse GoogleService-Info-Tests.plist for testing.")
             }
