@@ -180,7 +180,6 @@ class KeychainStorageTests: XCTestCase {
             XCTAssertEqual(authError, expectedError, "The caught error should match the expected AuthError")
         }
 
-        // Verify mock state (remains the same)
         XCTAssertEqual(sut.saveUserIDCallCount, 0)
         let storageValue = await sut.getLastUserID()
         XCTAssertNil(storageValue)
@@ -205,7 +204,6 @@ class KeychainStorageTests: XCTestCase {
             XCTAssertEqual(authError, expectedError, "The caught error should match the expected AuthError")
         }
 
-        // Verify state (remains the same)
         XCTAssertEqual(sut.clearUserIDCallCount, 0)
         let userIDAfterFailedClear = await sut.getLastUserID()
         XCTAssertNotNil(userIDAfterFailedClear, "User ID should still exist if clear failed")

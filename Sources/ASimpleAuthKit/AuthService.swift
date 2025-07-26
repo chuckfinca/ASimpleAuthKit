@@ -31,6 +31,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var cancellables = Set<AnyCancellable>()
     internal var isTestMode: Bool
+    private var isSigningOutManually: Bool = false
 
     // Stores the credential from an initial failed sign-in (e.g. tried Apple, but account exists with Google)
     // This is the credential we want to *link* after the user re-authenticates with their existing method.
@@ -208,10 +209,18 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     public func signOut() async {
         print("AuthService: signOut requested.")
         self.pendingCredentialToLinkAfterReauth = nil
+        isSigningOutManually = true
+
+        // Ensure the flag is always reset, even if errors occur
+        defer {
+            isSigningOutManually = false
+            print("AuthService: Manual sign-out process complete.")
+        }
 
         do {
             try self.firebaseAuthClient.signOut()
             print("AuthService: Firebase sign-out call successful.")
+            // The SINGLE source of truth for cleanup on manual sign-out.
             await clearLocalUserDataAndSetSignedOutState()
             lastError = nil
             print("AuthService: State set to signedOut and local data cleared synchronously after sign out call.")
@@ -475,7 +484,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
     private func clearLocalUserDataAndSetSignedOutState() async {
         try? await secureStorage.clearLastUserID()
         print("AuthService: Cleared last user ID from secure storage.")
-        
+
         if pendingCredentialToLinkAfterReauth != nil {
             pendingCredentialToLinkAfterReauth = nil
             print("AuthService: Cleared pendingCredentialToLinkAfterReauth in clearLocalUserDataAndSetSignedOutState.")
@@ -505,6 +514,14 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             print("AuthService Listener: In test mode, listener ignored.")
             return
         }
+
+        // If a manual sign-out is in progress, the signOut() function is responsible
+        // for cleanup. The listener should do nothing.
+        guard !isSigningOutManually else {
+            print("AuthService Listener: Ignoring state change due to manual sign-out.")
+            return
+        }
+
         let currentAuthServiceState = self.state
 
         if let fbUser = firebaseUser {
@@ -515,7 +532,7 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
                 print("AuthService Listener: Ignoring update (AuthService currently busy: \(currentAuthServiceState))")
                 return
             }
-            
+
             if currentAuthServiceState.isPendingResolution {
                 print("AuthService Listener: Ignoring update (AuthService currently pending resolution: \(currentAuthServiceState))")
                 return

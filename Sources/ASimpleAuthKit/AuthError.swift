@@ -55,7 +55,7 @@ public enum AuthError: Error, Equatable, Sendable {
             return lEmail == rEmail
         case (.helpfulUserNotFound(let lEmail), .helpfulUserNotFound(let rEmail)):
             return lEmail == rEmail
-        case (.emailAlreadyInUseDuringCreation(let lEmail), .emailAlreadyInUseDuringCreation(let rEmail)): // ADD THIS CASE
+        case (.emailAlreadyInUseDuringCreation(let lEmail), .emailAlreadyInUseDuringCreation(let rEmail)):
             return lEmail == rEmail
         default: return false
         }
