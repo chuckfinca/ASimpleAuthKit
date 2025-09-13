@@ -25,7 +25,7 @@ final class AuthServiceTests: XCTestCase {
             // The "GoogleService-Info-Tests.plist" is included in the test target's resources.
             // Use `Bundle.module` which is the correct way to access resources in a Swift Package.
             guard let path = Bundle.module.path(forResource: "GoogleService-Info-Tests", ofType: "plist"),
-            let options = FirebaseOptions(contentsOfFile: path) else {
+                let options = FirebaseOptions(contentsOfFile: path) else {
                 fatalError("Could not locate or parse GoogleService-Info-Tests.plist for testing.")
             }
             FirebaseApp.configure(options: options)
@@ -213,7 +213,7 @@ final class AuthServiceTests: XCTestCase {
 
     func testSignOut_callsClientAndClearsData() async throws {
         sut.forceStateForTesting(.signedIn(createDummyAuthUser()))
-        
+
         await sut.signOut()
 
         XCTAssertEqual(mockFirebaseAuthClient.signOutCallCount, 1)
@@ -314,5 +314,51 @@ final class AuthServiceTests: XCTestCase {
         XCTAssertEqual(sut.lastError, linkingError)
         XCTAssertNotNil(sut.pendingCredentialToLinkAfterReauth)
         XCTAssertEqual(sut.pendingCredentialToLinkAfterReauth?.provider, "apple.com")
+    }
+
+    func test_initWithCustomFirebaseApp_initializesClientCorrectly() throws {
+        // ARRANGE
+
+        // 1. Get the default FirebaseApp instance that was configured in the class setUp.
+        guard let defaultApp = FirebaseApp.app() else {
+            XCTFail("Default Firebase App should be configured.")
+            return
+        }
+
+        // 2. Configure a named, secondary FirebaseApp for this test.
+        guard let path = Bundle.module.path(forResource: "GoogleService-Info-Tests", ofType: "plist"),
+            let options = FirebaseOptions(contentsOfFile: path) else {
+            XCTFail("Could not find test plist.")
+            return
+        }
+        let appName = "CustomTestApp"
+        // Make sure we don't configure it twice if a previous test did.
+        if FirebaseApp.app(name: appName) == nil {
+            FirebaseApp.configure(name: appName, options: options)
+        }
+        guard let customApp = FirebaseApp.app(name: appName) else {
+            XCTFail("Could not configure custom Firebase app.")
+            return
+        }
+
+        // ACT
+
+        // 3. Create a client using the default initializer (app = nil)
+        let defaultClient = LiveFirebaseAuthClient()
+
+        // 4. Create a client using the new initializer with our custom app
+        let customClient = LiveFirebaseAuthClient(app: customApp)
+
+        // ASSERT
+
+        // 5. Verify that the clients are associated with the correct FirebaseApp instances.
+        //    We can do this by checking the `app` property on their internal `auth` object.
+        XCTAssertEqual(defaultClient.auth.app?.name, defaultApp.name, "Default client should use the default FirebaseApp.")
+        XCTAssertNotEqual(defaultClient.auth.app?.name, customApp.name)
+
+        XCTAssertEqual(customClient.auth.app?.name, customApp.name, "Custom client should use the custom FirebaseApp.")
+        XCTAssertNotEqual(customClient.auth.app?.name, defaultApp.name)
+
+        print("✅ Initializer test passed: LiveFirebaseAuthClient correctly associates with default and custom Firebase apps.")
     }
 }

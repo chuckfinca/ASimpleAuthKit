@@ -39,6 +39,13 @@ public protocol AuthServiceProtocol: ObservableObject {
     func resolvePendingAction()
     func resetAuthenticationState()
 
+    // --- ID Token Methods ---
+    /// Gets the current user's Firebase ID token for server authentication
+    /// - Parameter forcingRefresh: Whether to force a token refresh (default: false)
+    /// - Returns: The ID token string
+    /// - Throws: AuthError if no user is signed in or token retrieval fails
+    func getIDToken(forcingRefresh: Bool) async throws -> String
+
     // --- Lifecycle ---
     func invalidate()
 }

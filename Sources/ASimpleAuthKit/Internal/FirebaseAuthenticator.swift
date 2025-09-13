@@ -12,6 +12,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     private let config: AuthConfig
     private let secureStorage: SecureStorageProtocol
     private let firebaseAuthClient: FirebaseAuthClientProtocol
+    private let app: FirebaseApp?
 
     // For Apple Sign In
     private var currentAppleSignInContinuation: CheckedContinuation<AuthUser, Error>?
@@ -23,10 +24,11 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     // Stores the credential the user just attempted if Firebase returns "accountExistsWithDifferentCredential"
     private(set) var pendingCredentialForLinking: AuthCredential?
 
-    internal init(config: AuthConfig, secureStorage: SecureStorageProtocol, firebaseAuthClient: FirebaseAuthClientProtocol) {
+    internal init(config: AuthConfig, secureStorage: SecureStorageProtocol, firebaseAuthClient: FirebaseAuthClientProtocol, app: FirebaseApp? = nil) {
         self.config = config
         self.secureStorage = secureStorage
         self.firebaseAuthClient = firebaseAuthClient
+        self.app = app ?? FirebaseApp.app()
         super.init()
         print("FirebaseAuthenticator: Initialized.")
     }
@@ -107,7 +109,9 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         print("FirebaseAuthenticator: Attempting Google sign-in.")
 
-        guard let clientID = FirebaseApp.app()?.options.clientID else {
+        let appToUse = self.app ?? FirebaseApp.app()
+
+        guard let clientID = appToUse?.options.clientID else {
             print("FirebaseAuthenticator: Google Sign-In error - Firebase Client ID not found.")
             throw AuthError.configurationError("Google Sign-In: Firebase Client ID missing.")
         }
@@ -179,7 +183,7 @@ internal class FirebaseAuthenticator: NSObject, FirebaseAuthenticatorProtocol, A
     }
 
     // MARK: - ASAuthorizationControllerDelegate methods
-    
+
     nonisolated public func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
 
         Task { @MainActor [weak self] in

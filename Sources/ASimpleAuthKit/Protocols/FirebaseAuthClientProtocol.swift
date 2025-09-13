@@ -26,4 +26,7 @@ internal protocol FirebaseAuthClientProtocol {
     // Note: These methods are on the User object, but we can abstract them here
     func link(user: FirebaseAuth.User, with credential: AuthCredential) async throws -> AuthDataResult
     func sendEmailVerification(for user: FirebaseAuth.User) async throws
+    
+    // ID Token
+    func getIDToken(for user: FirebaseAuth.User, forcingRefresh: Bool) async throws -> String
 }

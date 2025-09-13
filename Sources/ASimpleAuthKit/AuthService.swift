@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import FirebaseAuth
 import UIKit
+import FirebaseCore
 
 @MainActor
 public class AuthService: ObservableObject, AuthServiceProtocol {
@@ -86,6 +87,38 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
             firebaseAuthClient: liveFirebaseAuthClient
         )
         print("AuthService: Convenience Init completed.")
+    }
+
+    /// A new convenience initializer for supporting multiple Firebase environments (e.g., local and cloud).
+    /// - Parameters:
+    ///   - config: The standard authentication configuration.
+    ///   - app: The specific FirebaseApp instance (e.g., a secondary app for emulators) to use for all authentication operations.
+    ///   - emulatorHost: (Optional) The hostname of the Firebase Auth emulator (e.g., "localhost").
+    ///   - emulatorPort: (Optional) The port of the Firebase Auth emulator (e.g., 9099).
+    public convenience init(config: AuthConfig, app: FirebaseApp, emulatorHost: String? = nil, emulatorPort: Int? = nil) {
+        let storage = KeychainStorage(accessGroup: config.keychainAccessGroup)
+        let bioAuth = BiometricAuthenticator()
+        // This line creates a client that uses the SPECIFIC app you provide.
+        let liveFirebaseAuthClient = LiveFirebaseAuthClient(app: app)
+
+        // If the host and port are provided, tell the Auth instance to use the emulator.
+        if let host = emulatorHost, let port = emulatorPort {
+            // Perform a best-effort sign-out on this specific Auth instance
+            // to clear any cached tokens from the cloud instance before connecting to the emulator.
+            try? liveFirebaseAuthClient.auth.signOut()
+            liveFirebaseAuthClient.auth.useEmulator(withHost: host, port: port)
+            print("AuthService: Configured to use Auth emulator at \(host):\(port)")
+        }
+
+        let fireAuth = FirebaseAuthenticator(config: config, secureStorage: storage, firebaseAuthClient: liveFirebaseAuthClient, app: app)
+        self.init(
+            config: config,
+            secureStorage: storage,
+            firebaseAuthenticator: fireAuth,
+            biometricAuthenticator: bioAuth,
+            firebaseAuthClient: liveFirebaseAuthClient
+        )
+        print("AuthService: Convenience Init with custom FirebaseApp completed.")
     }
 
     deinit {
@@ -307,6 +340,33 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
         print("AuthService: Authentication state completely reset to signedOut.")
     }
 
+    // MARK: - Public API - ID Token Methods
+
+    public func getIDToken(forcingRefresh: Bool = false) async throws -> String {
+        guard case .signedIn(let authUser) = state else {
+            print("AuthService: Cannot get ID token. User not signed in.")
+            throw AuthError.configurationError("No user is currently signed in.")
+        }
+
+        guard let firebaseUser = self.firebaseAuthClient.currentUser else {
+            print("AuthService: Cannot get ID token. No current Firebase user found.")
+            throw AuthError.configurationError("Firebase user not available.")
+        }
+
+        guard firebaseUser.uid == authUser.uid else {
+            print("AuthService: Mismatch between AuthService user and Firebase current user.")
+            throw AuthError.configurationError("User authentication state is inconsistent.")
+        }
+
+        do {
+            let idToken = try await firebaseAuthClient.getIDToken(for: firebaseUser, forcingRefresh: forcingRefresh)
+            print("AuthService: Successfully retrieved ID token for user \(authUser.uid)")
+            return idToken
+        } catch {
+            print("AuthService: Failed to get ID token: \(error.localizedDescription)")
+            throw AuthError.makeFirebaseAuthError(error)
+        }
+    }
 
     // MARK: - Auth Operation Orchestration
 

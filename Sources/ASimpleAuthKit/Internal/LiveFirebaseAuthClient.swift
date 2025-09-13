@@ -7,46 +7,66 @@
 
 import Foundation
 import FirebaseAuth
+import FirebaseCore
 
 @MainActor
 internal class LiveFirebaseAuthClient: FirebaseAuthClientProtocol {
+
+    internal let auth: Auth
+    
+    init(app: FirebaseApp? = nil) {
+        if let app = app {
+            // If an app is provided, get the Auth instance for THAT app
+            self.auth = Auth.auth(app: app)
+            print("LiveFirebaseAuthClient: Initialized with custom FirebaseApp.")
+        } else {
+            // Otherwise, fall back to the default global singleton
+            self.auth = Auth.auth()
+            print("LiveFirebaseAuthClient: Initialized with default FirebaseApp.")
+        }
+    }
+    
     var currentUser: FirebaseAuth.User? {
-        Auth.auth().currentUser
+        self.auth.currentUser
     }
 
     func addStateDidChangeListener(_ listener: @escaping (FirebaseAuth.Auth, FirebaseAuth.User?) -> Void) -> AuthStateDidChangeListenerHandle {
-        Auth.auth().addStateDidChangeListener(listener)
+        self.auth.addStateDidChangeListener(listener)
     }
 
     func removeStateDidChangeListener(_ handle: AuthStateDidChangeListenerHandle) {
-        Auth.auth().removeStateDidChangeListener(handle)
+        self.auth.removeStateDidChangeListener(handle)
     }
 
     func signOut() throws {
-        try Auth.auth().signOut()
+        try self.auth.signOut()
     }
 
     func signIn(withEmail email: String, password: String) async throws -> AuthDataResult {
-        try await Auth.auth().signIn(withEmail: email, password: password)
+        try await self.auth.signIn(withEmail: email, password: password)
     }
 
     func createUser(withEmail email: String, password: String) async throws -> AuthDataResult {
-        try await Auth.auth().createUser(withEmail: email, password: password)
+        try await self.auth.createUser(withEmail: email, password: password)
     }
 
     func sendPasswordReset(withEmail email: String) async throws {
-        try await Auth.auth().sendPasswordReset(withEmail: email)
+        try await self.auth.sendPasswordReset(withEmail: email)
     }
 
     func signIn(with credential: AuthCredential) async throws -> AuthDataResult {
-        try await Auth.auth().signIn(with: credential)
+        try await self.auth.signIn(with: credential)
     }
 
     func link(user: FirebaseAuth.User, with credential: AuthCredential) async throws -> AuthDataResult {
         try await user.link(with: credential)
     }
-    
+
     func sendEmailVerification(for user: FirebaseAuth.User) async throws {
         try await user.sendEmailVerification()
+    }
+
+    func getIDToken(for user: FirebaseAuth.User, forcingRefresh: Bool = false) async throws -> String {
+        try await user.getIDTokenResult(forcingRefresh: forcingRefresh).token
     }
 }

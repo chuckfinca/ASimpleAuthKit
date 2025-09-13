@@ -51,8 +51,12 @@ class MockSecureStorage: SecureStorageProtocol {
 
     func reset() {
         storage.removeAll()
-        saveUserIDCallCount = 0; getLastUserIDCallCount = 0; clearUserIDCallCount = 0
-        lastSavedUserID = nil; saveError = nil; clearError = nil
+        saveUserIDCallCount = 0
+        getLastUserIDCallCount = 0
+        clearUserIDCallCount = 0
+        lastSavedUserID = nil
+        saveError = nil
+        clearError = nil
     }
 }
 
@@ -77,8 +81,11 @@ class MockBiometricAuthenticator: BiometricAuthenticatorProtocol {
     }
 
     func reset() {
-        authResultProvider = { .success(()) }; authenticateCallCount = 0; lastAuthReason = nil
-        mockIsAvailable = true; mockBiometryType = "Mock Biometrics"
+        authResultProvider = { .success(()) }
+        authenticateCallCount = 0
+        lastAuthReason = nil
+        mockIsAvailable = true
+        mockBiometryType = "Mock Biometrics"
     }
 }
 
@@ -108,25 +115,29 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     func signInWithEmail(email: String, password: String) async throws -> AuthUser {
         signInWithEmailCallCount += 1
-        guard let provider = signInWithEmailResultProvider else { XCTFail("signInWithEmailResultProvider not set."); throw AuthError.unknown }
+        guard let provider = signInWithEmailResultProvider else { XCTFail("signInWithEmailResultProvider not set.")
+        throw AuthError.unknown }
         return try processMockResult(provider(email, password))
     }
 
     func createAccountWithEmail(email: String, password: String, displayName: String?) async throws -> AuthUser {
         createAccountWithEmailCallCount += 1
-        guard let provider = createAccountWithEmailResultProvider else { XCTFail("createAccountWithEmailResultProvider not set."); throw AuthError.unknown }
+        guard let provider = createAccountWithEmailResultProvider else { XCTFail("createAccountWithEmailResultProvider not set.")
+        throw AuthError.unknown }
         return try processMockResult(provider(email, password, displayName))
     }
 
     func signInWithGoogle(presentingViewController: UIViewController) async throws -> AuthUser {
         signInWithGoogleCallCount += 1
-        guard let provider = signInWithGoogleResultProvider else { XCTFail("signInWithGoogleResultProvider not set."); throw AuthError.unknown }
+        guard let provider = signInWithGoogleResultProvider else { XCTFail("signInWithGoogleResultProvider not set.")
+        throw AuthError.unknown }
         return try processMockResult(provider(presentingViewController))
     }
 
     func signInWithApple(presentingViewController: UIViewController, rawNonce: String) async throws -> AuthUser {
         signInWithAppleCallCount += 1
-        guard let provider = signInWithAppleResultProvider else { XCTFail("signInWithAppleResultProvider not set."); throw AuthError.unknown }
+        guard let provider = signInWithAppleResultProvider else { XCTFail("signInWithAppleResultProvider not set.")
+        throw AuthError.unknown }
         return try processMockResult(provider(presentingViewController, rawNonce))
     }
     
@@ -142,7 +153,8 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
 
     func linkCredential(_ credentialToLink: AuthCredential, to user: FirebaseAuth.User) async throws -> AuthUser {
         linkCredentialCallCount += 1
-        guard let provider = linkCredentialResultProvider else { XCTFail("linkCredentialResultProvider not set."); throw AuthError.unknown }
+        guard let provider = linkCredentialResultProvider else { XCTFail("linkCredentialResultProvider not set.")
+        throw AuthError.unknown }
         return try processMockResult(provider(credentialToLink, user))
     }
 
@@ -163,9 +175,22 @@ class MockFirebaseAuthenticator: FirebaseAuthenticatorProtocol {
     }
 
     func reset() {
-        signInWithEmailResultProvider = nil; createAccountWithEmailResultProvider = nil; signInWithGoogleResultProvider = nil; signInWithAppleResultProvider = nil; sendPasswordResetEmailError = nil; linkCredentialResultProvider = nil; sendEmailVerificationError = nil
+        signInWithEmailResultProvider = nil
+        createAccountWithEmailResultProvider = nil
+        signInWithGoogleResultProvider = nil
+        signInWithAppleResultProvider = nil
+        sendPasswordResetEmailError = nil
+        linkCredentialResultProvider = nil
+        sendEmailVerificationError = nil
         pendingCredentialForLinking = nil
-        signInWithEmailCallCount = 0; createAccountWithEmailCallCount = 0; signInWithGoogleCallCount = 0; signInWithAppleCallCount = 0; sendPasswordResetEmailCallCount = 0; linkCredentialCallCount = 0; clearTemporaryCredentialsCallCount = 0; sendEmailVerificationCallCount = 0
+        signInWithEmailCallCount = 0
+        createAccountWithEmailCallCount = 0
+        signInWithGoogleCallCount = 0
+        signInWithAppleCallCount = 0
+        sendPasswordResetEmailCallCount = 0
+        linkCredentialCallCount = 0
+        clearTemporaryCredentialsCallCount = 0
+        sendEmailVerificationCallCount = 0
     }
 }
 
@@ -180,7 +205,10 @@ class MockFirebaseAuthClient: FirebaseAuthClientProtocol {
     var mockSendPasswordResetError: Error?
     var mockSignInWithCredentialResult: Result<AuthDataResult, Error>?
     var mockLinkCredentialResult: Result<AuthDataResult, Error>?
-
+    var mockIDToken: String = "mock-id-token-12345"
+    var mockIDTokenError: Error?
+    
+    var getIDTokenCallCount = 0
     var signOutCallCount = 0
     var addStateDidChangeListenerCallCount = 0
     var removeStateDidChangeListenerCallCount = 0
@@ -218,12 +246,14 @@ class MockFirebaseAuthClient: FirebaseAuthClientProtocol {
     }
 
     func signIn(withEmail email: String, password: String) async throws -> AuthDataResult {
-        guard let result = mockSignInWithEmailResult else { XCTFail("mockSignInWithEmailResult not set."); throw AuthError.unknown }
+        guard let result = mockSignInWithEmailResult else { XCTFail("mockSignInWithEmailResult not set.")
+        throw AuthError.unknown }
         return try result.get()
     }
 
     func createUser(withEmail email: String, password: String) async throws -> AuthDataResult {
-        guard let result = mockCreateUserResult else { XCTFail("mockCreateUserResult not set."); throw AuthError.unknown }
+        guard let result = mockCreateUserResult else { XCTFail("mockCreateUserResult not set.")
+        throw AuthError.unknown }
         return try result.get()
     }
     
@@ -236,18 +266,42 @@ class MockFirebaseAuthClient: FirebaseAuthClientProtocol {
     }
 
     func signIn(with credential: AuthCredential) async throws -> AuthDataResult {
-        guard let result = mockSignInWithCredentialResult else { XCTFail("mockSignInWithCredentialResult not set."); throw AuthError.unknown }
+        guard let result = mockSignInWithCredentialResult else { XCTFail("mockSignInWithCredentialResult not set.")
+        throw AuthError.unknown }
         return try result.get()
     }
 
     func link(user: FirebaseAuth.User, with credential: AuthCredential) async throws -> AuthDataResult {
-        guard let result = mockLinkCredentialResult else { XCTFail("mockLinkCredentialResult not set."); throw AuthError.unknown }
+        guard let result = mockLinkCredentialResult else { XCTFail("mockLinkCredentialResult not set.")
+        throw AuthError.unknown }
         return try result.get()
+    }
+    
+    func getIDToken(for user: FirebaseAuth.User, forcingRefresh: Bool = false) async throws -> String {
+        getIDTokenCallCount += 1
+        if let error = mockIDTokenError {
+            throw error
+        }
+        return mockIDToken
     }
 
     func reset() {
-        mockCurrentUser = nil; mockSignOutError = nil; listeners.removeAll(); nextListenerHandle = 0; signOutCallCount = 0; addStateDidChangeListenerCallCount = 0; removeStateDidChangeListenerCallCount = 0
-        mockSignInWithEmailResult = nil; mockCreateUserResult = nil; mockSendEmailVerificationError = nil; mockSendPasswordResetError = nil; mockSignInWithCredentialResult = nil; mockLinkCredentialResult = nil
+        mockCurrentUser = nil
+        mockSignOutError = nil
+        listeners.removeAll()
+        nextListenerHandle = 0
+        signOutCallCount = 0
+        addStateDidChangeListenerCallCount = 0
+        removeStateDidChangeListenerCallCount = 0
+        mockSignInWithEmailResult = nil
+        mockCreateUserResult = nil
+        mockSendEmailVerificationError = nil
+        mockSendPasswordResetError = nil
+        mockSignInWithCredentialResult = nil
+        mockLinkCredentialResult = nil
+        mockIDToken = "mock-id-token-12345"
+            mockIDTokenError = nil
+            getIDTokenCallCount = 0
     }
 }
 
