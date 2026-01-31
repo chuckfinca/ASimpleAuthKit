@@ -42,6 +42,7 @@ public struct AuthUser: Equatable, Sendable {
 }
 
 public enum AuthState: Equatable, Sendable {
+    case unknown
     case signedOut
     case authenticating(String?)
     case requiresBiometrics
@@ -52,6 +53,7 @@ public enum AuthState: Equatable, Sendable {
 
     public static func == (lhs: AuthState, rhs: AuthState) -> Bool {
         switch (lhs, rhs) {
+        case (.unknown, .unknown): return true
         case (.signedOut, .signedOut): return true
         case (.authenticating(let lMsg), .authenticating(let rMsg)): return lMsg == rMsg
         case (.requiresBiometrics, .requiresBiometrics): return true
@@ -87,5 +89,9 @@ public enum AuthState: Equatable, Sendable {
 
     public var isSignedOut: Bool {
         return self == .signedOut
+    }
+
+    public var isUnknown: Bool {
+        return self == .unknown
     }
 }

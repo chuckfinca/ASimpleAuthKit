@@ -7,7 +7,7 @@ import FirebaseCore
 @MainActor
 public class AuthService: ObservableObject, AuthServiceProtocol {
 
-    @Published public private(set) var state: AuthState = .signedOut
+    @Published public private(set) var state: AuthState = .unknown
     @Published public private(set) var lastError: AuthError? = nil
 
     public var statePublisher: Published<AuthState>.Publisher { $state }
@@ -636,6 +636,8 @@ public class AuthService: ObservableObject, AuthServiceProtocol {
 fileprivate extension AuthState {
     func allowsSignInAttempt(for actionType: AuthService.AuthActionType) -> Bool {
         switch self {
+        case .unknown:
+            return false
         case .signedOut:
             return true
         case .requiresBiometrics:
